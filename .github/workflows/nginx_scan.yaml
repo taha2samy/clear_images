@@ -13,9 +13,10 @@ jobs:
     name: Build, Scan, and Report Nginx
     runs-on: ubuntu-latest
     permissions:
-      contents: read 
-      security-events: write 
-      actions: read 
+      contents: read
+      security-events: write
+      dependency-graph: write
+       
 
     steps:
       - name: Checkout Repository
