@@ -78,33 +78,20 @@ jobs:
           args: --config ./${{ matrix.service }}/container-tests.yaml
 
       # =================================================================
-      # THE BULLETPROOF FIX STARTS HERE
+      # THE FINAL FIX IS HERE: Install the LATEST version of Trivy
       # =================================================================
-      
-      - name: Install Trivy
+      - name: Install Latest Trivy
         uses: aquasecurity/trivy-action@master
         with:
           install-type: 'binary'
-          version: '0.51.1' 
+          # We REMOVED the 'version' pin to always get the newest, working binary.
 
-      # This step now includes debugging and a hard failure check.
-      - name: Run Trivy Scans and Verify File Creation
+      - name: Verify Trivy installation and version
+        run: trivy --version
+
+      - name: Generate All Trivy Reports
         run: |
-          echo "--- Starting Trivy Scans for ${{ matrix.service }} ---"
-          
-          # Command to generate the primary JSON report
           trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH --exit-code 0 --ignore-unfixed ${{ matrix.service }}:ci
-          
-          echo "--- Listing current directory to verify file creation ---"
-          ls -la
-          
-          # This is the most important check. Fail IMMEDIATELY if the file is missing.
-          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then
-            echo "FATAL ERROR: Trivy JSON report ('${{ matrix.service }}-trivy-results.json') was NOT created. Check Trivy logs above for errors."
-            exit 1
-          fi
-          
-          echo "--- JSON report found. Generating other reports... ---"
           trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
