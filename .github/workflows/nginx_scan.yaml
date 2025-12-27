@@ -76,25 +76,40 @@ jobs:
         with:
           dockerimage: ${{ matrix.service }}:ci
           args: --config ./${{ matrix.service }}/container-tests.yaml
-
-      # =================================================================
-      # THE FINAL FIX IS HERE: Install the LATEST version of Trivy
-      # =================================================================
+      
       - name: Install Latest Trivy
         uses: aquasecurity/trivy-action@master
         with:
           install-type: 'binary'
-          # We REMOVED the 'version' pin to always get the newest, working binary.
 
-      - name: Verify Trivy installation and version
-        run: trivy --version
-
-      - name: Generate All Trivy Reports
+      # =================================================================
+      # THE ULTIMATE DEBUGGING AND VERIFICATION STEP
+      # This step will show us EVERYTHING.
+      # =================================================================
+      - name: Generate Reports and Verify File Creation
         run: |
+          echo "--- Current directory BEFORE running Trivy: $(pwd) ---"
+          ls -la
+          
+          echo "--- Running Trivy for JSON report ---"
           trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH --exit-code 0 --ignore-unfixed ${{ matrix.service }}:ci
+          
+          echo "--- Current directory AFTER running Trivy for JSON report ---"
+          ls -la
+          
+          # This is the most important check. It will fail the job if the file is missing.
+          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then
+            echo "FATAL ERROR: The JSON report ('${{ matrix.service }}-trivy-results.json') was NOT created. The workflow will stop."
+            exit 1
+          fi
+          
+          echo "✅ JSON report verified. Generating other reports..."
           trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
+          
+          echo "--- Final file list after all reports ---"
+          ls -la
 
       - name: Generate Trivy Summary Report for ${{ matrix.service }}
         if: always()
