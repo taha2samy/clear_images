@@ -18,15 +18,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # The gitleaks action will FAIL (exit code 1) if it finds secrets.
       - name: Scan repository for secrets
+        id: gitleaks_scan # Added an ID to reference this step
         uses: gitleaks/gitleaks-action@v2
         with:
           report_format: sarif
           report_path: gitleaks-report.sarif
 
+      # This step will ONLY run if the previous step ('gitleaks_scan') failed.
       - name: Upload Gitleaks report
+        if: failure() # Changed from always() to failure()
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
         with:
           sarif_file: gitleaks-report.sarif
 
