@@ -1,4 +1,4 @@
-name: 'Build, Scan, and Report Nginx'
+name: 'Build, Scan, and Report redis'
 
 on:
   push:
@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-scan-and-report-nginx:
-    name: Build, Scan, and Report Nginx
+  build-scan-and-report-redis:
+    name: Build, Scan, and Report redis
     runs-on: ubuntu-latest
     permissions:
       contents: write        
@@ -30,21 +30,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      - name: Build Nginx Docker image
-        id: build-nginx
+      - name: Build redis Docker image
+        id: build-redis
         uses: docker/build-push-action@v5
         with:
-          context: ./nginx 
+          context: ./redis 
           push: false
           load: true
-          tags: nginx-distroless-ci:latest
+          tags: redis-distroless-ci:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
 
       - name: Run Trivy (JSON Output)
         uses: aquasecurity/trivy-action@0.22.0 
         with:
-          image-ref: 'nginx-distroless-ci:latest'
+          image-ref: 'redis-distroless-ci:latest'
           format: 'json' 
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
@@ -53,7 +53,7 @@ jobs:
       - name: Run Trivy (SARIF Output for GitHub Security Tab)
         uses: aquasecurity/trivy-action@0.22.0 
         with:
-          image-ref: 'nginx-distroless-ci:latest'
+          image-ref: 'redis-distroless-ci:latest'
           format: 'sarif' 
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
@@ -62,7 +62,7 @@ jobs:
       - name: Run Trivy (HTML Dashboard)
         uses: aquasecurity/trivy-action@0.22.0 
         with:
-          image-ref: 'nginx-distroless-ci:latest'
+          image-ref: 'redis-distroless-ci:latest'
           format: 'template'
           template: '@/contrib/html.tpl' 
           output: 'trivy-dashboard.html'
@@ -82,17 +82,17 @@ jobs:
       - name: Create SBOM Directory
         run: mkdir -p sbom-files
 
-      - name: Generate SBOM for Nginx Image
+      - name: Generate SBOM for redis Image
         uses: aquasecurity/trivy-action@0.22.0 
         with:
-          image-ref: 'nginx-distroless-ci:latest'
+          image-ref: 'redis-distroless-ci:latest'
           format: 'spdx-json'
-          output: 'sbom-files/nginx-sbom.spdx.json'
+          output: 'sbom-files/redis-sbom.spdx.json'
 
       - name: Fix PURL Encoding (Replace + with %2B)
         run: |
-          sed -i 's/%2B/%252B/g' sbom-files/nginx-sbom.spdx.json
-          sed -i 's/+/%252B/g' sbom-files/nginx-sbom.spdx.json
+          sed -i 's/%2B/%252B/g' sbom-files/redis-sbom.spdx.json
+          sed -i 's/+/%252B/g' sbom-files/redis-sbom.spdx.json
 
       - name: Upload SBOM to GitHub Dependency Graph
         uses: advanced-security/spdx-dependency-submission-action@main
