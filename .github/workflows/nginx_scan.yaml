@@ -47,6 +47,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Lint Dockerfile for ${{ matrix.service }}
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ./${{ matrix.service }}/Dockerfile
+          output-file: ${{ matrix.service }}-hadolint-report.txt
+          no-fail: true
+
+      - name: Generate Hadolint Summary Report for ${{ matrix.service }}
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate-hadolint-report.sh
+          ./.github/scripts/generate-hadolint-report.sh ${{ matrix.service }}-hadolint-report.txt
+
       - name: Build ${{ matrix.service }} Docker image
         uses: docker/build-push-action@v5
         with:
@@ -61,43 +74,53 @@ jobs:
           dockerimage: ${{ matrix.service }}:ci
           args: --config ./${{ matrix.service }}/container-tests.yaml
 
-      # --- Reporting starts here with a main header ---
-      - name: Add Job Summary Header
-        run: echo "## 🚀 Summary for ${{ matrix.service }}" >> $GITHUB_STEP_SUMMARY
-
-      - name: Lint Dockerfile for ${{ matrix.service }}
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: ./${{ matrix.service }}/Dockerfile
-          output-file: ${{ matrix.service }}-hadolint-report.txt
-          no-fail: true
-
-      - name: Generate Hadolint Summary Report
-        if: always()
-        run: |
-          chmod +x .github/scripts/generate-hadolint-report.sh
-          ./.github/scripts/generate-hadolint-report.sh ${{ matrix.service }}-hadolint-report.txt ${{ matrix.service }}
-
-      - name: Generate JSON Report for ${{ matrix.service }}
+      - name: Install Trivy (Stable Version)
         uses: aquasecurity/trivy-action@0.22.0
         with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'json'
-          output: '${{ matrix.service }}-trivy-results.json'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
+          install-type: 'binary'
 
-      - name: Generate Trivy Summary Report
+      # =================================================================
+      # THE UNBREAKABLE LINEAR FLOW STARTS HERE
+      # Each step MUST succeed for the next one to start.
+      # =================================================================
+
+      - name: 1. Generate JSON Report for ${{ matrix.service }}
         run: |
+          # Exit immediately if a command exits with a non-zero status.
+          set -e
+          
+          echo "Attempting to create JSON report for ${{ matrix.service }}..."
+          trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN ${{ matrix.service }}:ci
+          
+          echo "✅ JSON report command finished. Verifying file exists..."
+          # This ls command will fail if the file doesn't exist, stopping the workflow here.
+          ls -la ${{ matrix.service }}-trivy-results.json
+
+      - name: 2. Generate Trivy Summary Report for ${{ matrix.service }}
+        run: |
+          # This step will only run if the JSON file was created successfully in the previous step.
           chmod +x .github/scripts/generate-report.sh
-          ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json ${{ matrix.service }}
-      
-      - name: Generate SARIF, HTML, and SBOM reports
-        run: |
-          trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif ${{ matrix.service }}:ci
-          trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html ${{ matrix.service }}:ci
-          trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
+          ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
-      - name: Upload All Reports as Artifacts
+      - name: 3. Generate SARIF Report for ${{ matrix.service }}
+        run: |
+          set -e
+          trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN ${{ matrix.service }}:ci
+          ls -la ${{ matrix.service }}-trivy.sarif
+
+      - name: 4. Generate HTML Report for ${{ matrix.service }}
+        run: |
+          set -e
+          trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN ${{ matrix.service }}:ci
+          ls -la ${{ matrix.service }}-report.html
+
+      - name: 5. Generate SBOM Report for ${{ matrix.service }}
+        run: |
+          set -e
+          trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
+          ls -la ${{ matrix.service }}-sbom.spdx.json
+
+      - name: 6. Upload All Reports as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -109,23 +132,27 @@ jobs:
             ${{ matrix.service }}-sbom.spdx.json
           if-no-files-found: 'warn'
 
-      - name: Upload Trivy SARIF to GitHub Security Tab
+      - name: 7. Upload Trivy SARIF to GitHub Security Tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: '${{ matrix.service }}-trivy.sarif'
 
-      - name: Check for Vulnerabilities (Policy Check)
+      - name: 8. Check for Vulnerabilities (Policy Check)
         if: always()
         run: |
-          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then exit 0; fi
+          # Check if the JSON file exists before trying to parse it
+          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then
+            echo "Warning: JSON report not found, skipping policy check."
+            exit 0
+          fi
           VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select((.Severity == "CRITICAL" or .Severity == "HIGH") and .FixedVersion)] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
           echo "Found $VULN_COUNT critical/high vulnerabilities with available fixes."
           if [ "$VULN_COUNT" -gt 0 ]; then
             echo "POLICY_VIOLATION=true" >> $GITHUB_ENV
           fi
 
-      - name: Enforce Security Policy
+      - name: 9. Enforce Security Policy
         if: env.POLICY_VIOLATION == 'true'
         run: |
           echo "Failing the job due to detected CRITICAL or HIGH severity vulnerabilities with fixes."
