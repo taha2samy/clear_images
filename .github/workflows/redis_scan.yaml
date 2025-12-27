@@ -42,7 +42,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
 
       - name: Run Trivy (JSON Output)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.22.0 
         with:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'json' 
@@ -51,7 +51,7 @@ jobs:
           ignore-unfixed: false 
 
       - name: Run Trivy (SARIF Output for GitHub Security Tab)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.22.0 
         with:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'sarif' 
@@ -60,7 +60,7 @@ jobs:
           ignore-unfixed: false
 
       - name: Run Trivy (HTML Dashboard)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.22.0 
         with:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'template'
@@ -83,7 +83,7 @@ jobs:
         run: mkdir -p sbom-files
 
       - name: Generate SBOM for Nginx Image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.22.0 
         with:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'spdx-json'
