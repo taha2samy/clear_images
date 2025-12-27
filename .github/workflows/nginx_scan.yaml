@@ -57,7 +57,7 @@ jobs:
           output: 'sbom-files/nginx-sbom.spdx.json'
 
       - name: Upload SBOM to GitHub Dependency Graph
-        uses: dependency-graph/sbom-action@v2.1.1
+        uses: dependency-graph/sbom-action@main
         with:
           file: sbom-files/nginx-sbom.spdx.json
 
