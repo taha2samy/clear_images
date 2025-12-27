@@ -19,6 +19,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ./nginx/Dockerfile
+          output-file: hadolint-report.txt
+          no-fail: true
+
+      - name: Generate Hadolint Summary Report
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate-hadolint-report.sh
+          ./.github/scripts/generate-hadolint-report.sh hadolint-report.txt
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -88,6 +101,12 @@ jobs:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'spdx-json'
           output: 'sbom-files/nginx-sbom.spdx.json'
+      - name: Upload SBOM Report as an Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-report 
+          path: sbom-files  
+
 
       - name: Fix PURL Encoding (Replace + with %2B)
         run: |
