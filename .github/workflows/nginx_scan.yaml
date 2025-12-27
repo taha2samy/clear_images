@@ -61,14 +61,14 @@ jobs:
         with:
           filePath: 'sbom-files' 
 
-      - name: Upload Nginx SBOM as an Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload SBOM to GitHub Dependency Graph
+        uses: dependency-graph/sbom-action@v2
         with:
-          name: nginx-sbom
-          path: sbom-files/nginx-sbom.spdx.json
-          
+          file: sbom-files/nginx-sbom.spdx.json
+            
       - name: Add Trivy Scan Results to Job Summary
         run: |
           echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           tail -n +11 trivy-summary.md >> $GITHUB_STEP_SUMMARY
+
