@@ -78,26 +78,33 @@ jobs:
           args: --config ./${{ matrix.service }}/container-tests.yaml
 
       # =================================================================
-      # THE DEFINITIVE FIX: Install Trivy binary, then run CLI commands
+      # THE BULLETPROOF FIX STARTS HERE
       # =================================================================
       
-      # Step 1: Install the Trivy binary into the runner's environment.
       - name: Install Trivy
         uses: aquasecurity/trivy-action@master
         with:
           install-type: 'binary'
-          # Pin to a specific version for stability
           version: '0.51.1' 
 
-      # Step 2: Run all scans using direct, reliable CLI commands.
-      - name: Run Trivy Scans and Generate All Reports
+      # This step now includes debugging and a hard failure check.
+      - name: Run Trivy Scans and Verify File Creation
         run: |
-          # Command for the policy check and summary report (JSON)
-          # We check for the file's existence immediately after creation to fail fast if something is wrong.
+          echo "--- Starting Trivy Scans for ${{ matrix.service }} ---"
+          
+          # Command to generate the primary JSON report
           trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH --exit-code 0 --ignore-unfixed ${{ matrix.service }}:ci
-          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then echo "FATAL: JSON report was not created!" && exit 1; fi
-
-          # Other reports
+          
+          echo "--- Listing current directory to verify file creation ---"
+          ls -la
+          
+          # This is the most important check. Fail IMMEDIATELY if the file is missing.
+          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then
+            echo "FATAL ERROR: Trivy JSON report ('${{ matrix.service }}-trivy-results.json') was NOT created. Check Trivy logs above for errors."
+            exit 1
+          fi
+          
+          echo "--- JSON report found. Generating other reports... ---"
           trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
