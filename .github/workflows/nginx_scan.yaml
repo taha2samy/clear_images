@@ -56,10 +56,10 @@ jobs:
           format: 'spdx-json'
           output: 'sbom-files/nginx-sbom.spdx.json'
 
-        - name: Upload SBOM to GitHub Dependency Graph
-            uses: advanced-security/spdx-dependency-submission-action@main
-            with:
-            filePath: sbom-files
+      - name: Upload SBOM to GitHub Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@main
+        with:
+          filePath: sbom-files
 
             
       - name: Add Trivy Scan Results to Job Summary
