@@ -15,11 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libc-bin=2.36-9+deb12u4 \
     gawk=1:5.2.1-2 && \
     mkdir /distroless-deps && \
-    # Discover dependencies for the main redis-server binary
     ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
-    # Discover dependencies for the optional redis-cli binary
     ldd /usr/local/bin/redis-cli | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
-    # Clean up build-time tools and apt cache to keep the layer small
     apt-get purge -y --auto-remove libc-bin gawk && \
     rm -rf /var/lib/apt/lists/*
 
