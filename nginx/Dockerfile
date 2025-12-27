@@ -26,6 +26,7 @@ COPY --from=builder /usr/lib/nginx /usr/lib/nginx
 COPY --from=builder --chown=nginx:nginx /var/log/nginx /var/log/nginx
 COPY --from=builder --chown=nginx:nginx /var/cache/nginx /var/cache/nginx
 COPY --from=builder /tmp /tmp
+COPY --from=builder /lib/x86_64-linux-gnu/libcrypt.so.1 /lib/x86_64-linux-gnu/libcrypt.so.1
 
 # Copy the actual web content for your site
 COPY index.html /usr/share/nginx/html/index.html
