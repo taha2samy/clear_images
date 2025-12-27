@@ -57,7 +57,6 @@ jobs:
           output-file: ${{ matrix.service }}-hadolint-report.txt
           no-fail: true
 
-      # --- SCRIPT RE-INTEGRATION 1 ---
       - name: Generate Hadolint Summary Report for ${{ matrix.service }}
         if: always()
         run: |
@@ -72,11 +71,14 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
+      # =================================================================
+      # The FIX IS HERE - Using the correct and available action
+      # =================================================================
       - name: Run Container Structure Tests for ${{ matrix.service }}
-        uses: GoogleCloudPlatform/container-structure-test-action@v1
+        uses: amardeep2006/container-structure-test-github-action@v1
         with:
-          image: ${{ matrix.service }}:ci
-          configFile: ./${{ matrix.service }}/container-tests.yaml
+          dockerimage: ${{ matrix.service }}:ci
+          args: --config ./${{ matrix.service }}/container-tests.yaml
 
       - name: Scan ${{ matrix.service }} for vulnerabilities
         uses: aquasecurity/trivy-action@0.22.0
@@ -88,7 +90,6 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
 
-      # --- SCRIPT RE-INTEGRATION 2 ---
       - name: Generate Trivy Summary Report for ${{ matrix.service }}
         if: always()
         run: |
@@ -96,7 +97,6 @@ jobs:
           ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
       - name: Generate other reports (SARIF, HTML, SBOM)
-        # This is an optimization to run multiple trivy commands in one step
         run: |
           trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
