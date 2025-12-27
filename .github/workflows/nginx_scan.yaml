@@ -71,16 +71,18 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      # =================================================================
-      # The FIX IS HERE - Using the correct and available action
-      # =================================================================
       - name: Run Container Structure Tests for ${{ matrix.service }}
         uses: amardeep2006/container-structure-test-github-action@v1
         with:
           dockerimage: ${{ matrix.service }}:ci
           args: --config ./${{ matrix.service }}/container-tests.yaml
 
-      - name: Scan ${{ matrix.service }} for vulnerabilities
+      # =================================================================
+      # THE FIX IS HERE: Restructured Trivy steps for clarity and correctness
+      # =================================================================
+      
+      # Step 1: Generate the essential JSON report for policy checks and summary script. ALWAYS runs.
+      - name: Scan for JSON report (for policy check)
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -90,17 +92,39 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
 
+      # Step 2: Use the newly created JSON file to generate the summary table.
       - name: Generate Trivy Summary Report for ${{ matrix.service }}
         if: always()
         run: |
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
-      - name: Generate other reports (SARIF, HTML, SBOM)
-        run: |
-          trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
-          trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
-          trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
+      # Step 3: Generate the SARIF report for the security tab.
+      - name: Generate SARIF report for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: '${{ matrix.service }}:ci'
+          format: 'sarif'
+          output: '${{ matrix.service }}-trivy.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      # Step 4: Generate the HTML report for artifacts.
+      - name: Generate HTML report for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: '${{ matrix.service }}:ci'
+          format: 'template'
+          template: '@/contrib/html.tpl'
+          output: '${{ matrix.service }}-report.html'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+      # Step 5: Generate the SBOM report for artifacts.
+      - name: Generate SBOM for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: '${{ matrix.service }}:ci'
+          format: 'spdx-json'
+          output: '${{ matrix.service }}-sbom.spdx.json'
 
       - name: Upload Reports for ${{ matrix.service }}
         uses: actions/upload-artifact@v4
