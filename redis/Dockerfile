@@ -4,16 +4,16 @@
 # =================================================================
 FROM redis:7-bookworm AS builder
 
-# Temporarily switch to the root user to install dependencies.
 USER root
 
-# Install tools, automatically discover all shared library dependencies, and clean up.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
     mkdir /distroless-deps && \
     ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
     rm -rf /var/lib/apt/lists/*
 
-
+USER redis
 # =================================================================
 # Stage 2: The Final "Distroless" Image
 # Using Debian 12 base to match the builder stage for library compatibility.
