@@ -156,4 +156,4 @@ jobs:
         if: env.POLICY_VIOLATION == 'true'
         run: |
           echo "Failing the job due to detected CRITICAL or HIGH severity vulnerabilities with fixes."
-          exit 1
+          exit 1```
