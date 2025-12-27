@@ -36,6 +36,11 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           ignore-unfixed: true
+      - name: Generate Job Summary Table
+        run: |
+          chmod +x .github/scripts/generate-report.sh
+          ./.github/scripts/generate-report.sh trivy-results.json
+
 
       - name: Generate Markdown Report for Summary
         uses: aquasecurity/trivy-action@master
@@ -44,7 +49,7 @@ jobs:
           format: 'table'
           output: 'trivy-summary.md'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: true
+          ignore-unfixed: false
 
       - name: Create SBOM Directory
         run: mkdir -p sbom-files
