@@ -50,6 +50,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Lint Dockerfile for ${{ matrix.service }}
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ./${{ matrix.service }}/Dockerfile
+          output-file: ${{ matrix.service }}-hadolint-report.txt
+          no-fail: true
+
+      - name: Generate Hadolint Summary Report for ${{ matrix.service }}
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate-hadolint-report.sh
+          ./.github/scripts/generate-hadolint-report.sh ${{ matrix.service }}-hadolint-report.txt
+
       - name: Build ${{ matrix.service }} Docker image
         uses: docker/build-push-action@v5
         with:
@@ -58,47 +71,37 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      - name: Install Latest Trivy
-        uses: aquasecurity/trivy-action@master
+      - name: Run Container Structure Tests for ${{ matrix.service }}
+        uses: amardeep2006/container-structure-test-github-action@v1
+        with:
+          dockerimage: ${{ matrix.service }}:ci
+          args: --config ./${{ matrix.service }}/container-tests.yaml
+
+      # =================================================================
+      # THE REAL, FINAL FIX IS HERE: Use a STABLE version for installation
+      # =================================================================
+      - name: Install Trivy
+        uses: aquasecurity/trivy-action@0.22.0 # Using a stable version instead of @master
         with:
           install-type: 'binary'
 
-      # =================================================================
-      # THE FINAL DIAGNOSTIC STEP - THIS WILL REVEAL THE TRUTH
-      # =================================================================
-      - name: Run Trivy Scan and Force Failure on Error
+      - name: Run Trivy Scans and Generate All Reports
         run: |
-          # This command will cause the entire step to fail if any command exits with a non-zero status
-          set -e
+          # The JSON report for the policy check (soft fail)
+          trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH --exit-code 0 --ignore-unfixed ${{ matrix.service }}:ci
           
-          echo "--- Verifying Docker image exists ---"
-          docker images ${{ matrix.service }}:ci
-
-          echo "--- Running Trivy Scan for ${{ matrix.service }}. This step will FAIL LOUDLY if trivy has any issue. ---"
-          
-          # We REMOVED --exit-code 0. We WANT trivy to fail if it can't generate the report.
-          trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH --ignore-unfixed ${{ matrix.service }}:ci
-          
-          echo "--- Listing files to confirm creation ---"
-          ls -la
-          
-          echo "✅ SUCCESS: Trivy JSON report was created successfully."
-
-      - name: Generate other reports (SARIF, HTML, SBOM)
-        run: |
-          set -e
+          # The other reports for artifacts and security tab
           trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
           trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
-          
+
       - name: Generate Trivy Summary Report for ${{ matrix.service }}
-        # This will only run if the previous steps succeeded
+        if: always()
         run: |
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
       - name: Upload Reports for ${{ matrix.service }}
-        if: always() # Upload reports even if the job fails later
         uses: actions/upload-artifact@v4
         with:
           name: reports-${{ matrix.service }}
@@ -109,7 +112,22 @@ jobs:
             ${{ matrix.service }}-trivy-results.json
 
       - name: Upload Trivy SARIF to GitHub Security Tab
-        if: always()
         uses: github/codeql-action/upload-sarif@v4
+        if: always()
         with:
           sarif_file: '${{ matrix.service }}-trivy.sarif'
+
+      - name: Check for critical or high vulnerabilities
+        if: always()
+        run: |
+          VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
+          echo "Found $VULN_COUNT critical/high vulnerabilities with available fixes."
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "POLICY_VIOLATION=true" >> $GITHUB_ENV
+          fi
+
+      - name: Enforce Security Policy
+        if: env.POLICY_VIOLATION == 'true'
+        run: |
+          echo "Failing the job due to detected CRITICAL or HIGH severity vulnerabilities."
+          exit 1
