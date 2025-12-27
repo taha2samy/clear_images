@@ -28,29 +28,36 @@ jobs:
           load: true
           tags: nginx-distroless-ci:latest
 
-      - name: Run Trivy Vulnerability Scanner
+      # 1. Scan for Script (JSON Format)
+      # دي الخطوة اللي السكربت محتاجها عشان يرسم الجدول
+      - name: Run Trivy (JSON Output)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'nginx-distroless-ci:latest'
+          format: 'json' 
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          ignore-unfixed: false # عشان يظهر كل الثغرات
+
+      # 2. Scan for Security Tab (SARIF Format)
+      # دي عشان الـ Github Security Tab
+      - name: Run Trivy (SARIF Output)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'sarif' 
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: true
+          ignore-unfixed: false
+
+      # 3. Generate The Fancy Table using your Script
       - name: Generate Job Summary Table
         run: |
+          # تأكد إن السكربت موجود في المسار ده في الريبو بتاعك
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh trivy-results.json
 
-
-      - name: Generate Markdown Report for Summary
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'nginx-distroless-ci:latest'
-          format: 'table'
-          output: 'trivy-summary.md'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: false
-
+      # 4. SBOM Section
       - name: Create SBOM Directory
         run: mkdir -p sbom-files
 
@@ -71,10 +78,9 @@ jobs:
         with:
           filePath: sbom-files
 
-            
-      - name: Add Trivy Scan Results to Job Summary
-        run: |
-          echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          tail -n +11 trivy-summary.md >> $GITHUB_STEP_SUMMARY
-
+      # 5. Upload Results to Security Tab
+      - name: Upload Trivy Scan Results to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
