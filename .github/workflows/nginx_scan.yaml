@@ -18,17 +18,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # The gitleaks action will FAIL (exit code 1) if it finds secrets.
       - name: Scan repository for secrets
-        id: gitleaks_scan # Added an ID to reference this step
         uses: gitleaks/gitleaks-action@v2
         with:
           report_format: sarif
           report_path: gitleaks-report.sarif
 
-      # This step will ONLY run if the previous step ('gitleaks_scan') failed.
       - name: Upload Gitleaks report
-        if: failure() # Changed from always() to failure()
+        if: failure()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gitleaks-report.sarif
@@ -57,6 +54,15 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./${{ matrix.service }}/Dockerfile
+          output-file: ${{ matrix.service }}-hadolint-report.txt
+          no-fail: true
+
+      # --- SCRIPT RE-INTEGRATION 1 ---
+      - name: Generate Hadolint Summary Report for ${{ matrix.service }}
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate-hadolint-report.sh
+          ./.github/scripts/generate-hadolint-report.sh ${{ matrix.service }}-hadolint-report.txt
 
       - name: Build ${{ matrix.service }} Docker image
         uses: docker/build-push-action@v5
@@ -67,13 +73,12 @@ jobs:
           tags: ${{ matrix.service }}:ci
 
       - name: Run Container Structure Tests for ${{ matrix.service }}
-        uses: addnab/docker-container-structure-test@v4
+        uses: GoogleCloudPlatform/container-structure-test-action@v1
         with:
           image: ${{ matrix.service }}:ci
           configFile: ./${{ matrix.service }}/container-tests.yaml
 
       - name: Scan ${{ matrix.service }} for vulnerabilities
-        id: trivy_scan
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -83,29 +88,19 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
 
-      - name: Generate SARIF report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'sarif'
-          output: '${{ matrix.service }}-trivy.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+      # --- SCRIPT RE-INTEGRATION 2 ---
+      - name: Generate Trivy Summary Report for ${{ matrix.service }}
+        if: always()
+        run: |
+          chmod +x .github/scripts/generate-report.sh
+          ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
-      - name: Generate HTML report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'template'
-          template: '@/contrib/html.tpl'
-          output: '${{ matrix.service }}-report.html'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-
-      - name: Generate SBOM for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'spdx-json'
-          output: '${{ matrix.service }}-sbom.spdx.json'
+      - name: Generate other reports (SARIF, HTML, SBOM)
+        # This is an optimization to run multiple trivy commands in one step
+        run: |
+          trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
+          trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW ${{ matrix.service }}:ci
+          trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
 
       - name: Upload Reports for ${{ matrix.service }}
         uses: actions/upload-artifact@v4
