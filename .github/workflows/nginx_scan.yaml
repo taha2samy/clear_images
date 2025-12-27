@@ -18,7 +18,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # FIX: Removed invalid inputs for the gitleaks action
       - name: Scan repository for secrets
         uses: gitleaks/gitleaks-action@v2
 
@@ -55,11 +54,6 @@ jobs:
           push: false
           load: true
           tags: ${{ matrix.service }}:ci
-
-      # =================================================================
-      # THE UNBREAKABLE LINEAR FLOW USING OFFICIAL ACTIONS
-      # Each step MUST succeed for the next one to start.
-      # =================================================================
 
       - name: 1. Generate JSON Report for ${{ matrix.service }}
         uses: aquasecurity/trivy-action@0.22.0
@@ -98,6 +92,9 @@ jobs:
           format: 'spdx-json'
           output: '${{ matrix.service }}-sbom.spdx.json'
 
+      # =================================================================
+      # THE FINAL, SIMPLE FIX IS HERE
+      # =================================================================
       - name: 6. Upload All Reports as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -108,7 +105,8 @@ jobs:
             ${{ matrix.service }}-trivy.sarif
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
-          ignore-missing-files: 'true'
+          # FIX: Replaced 'ignore-missing-files' with the correct input 'if-no-files-found'
+          if-no-files-found: 'warn'
 
       - name: 7. Upload Trivy SARIF to GitHub Security Tab
         if: always()
@@ -119,7 +117,6 @@ jobs:
       - name: 8. Check for Vulnerabilities (Policy Check)
         if: always()
         run: |
-          # Check if the JSON file exists before trying to parse it
           if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then
             echo "Warning: JSON report not found, skipping policy check."
             exit 0
