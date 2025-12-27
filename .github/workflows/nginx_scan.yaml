@@ -55,7 +55,7 @@ jobs:
           output: 'nginx-sbom.spdx.json'
 
       - name: Upload SBOM to GitHub Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
         with:
           filePath: nginx-sbom.spdx.json
 
@@ -64,7 +64,7 @@ jobs:
         with:
           name: nginx-sbom
           path: nginx-sbom.spdx.json
-          
+
       - name: Add Trivy Scan Results to Job Summary
         run: |
           echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
