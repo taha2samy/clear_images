@@ -59,6 +59,12 @@ jobs:
         with:
           filePath: nginx-sbom.spdx.json
 
+      - name: Upload Nginx SBOM as an Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-sbom
+          path: nginx-sbom.spdx.json
+          
       - name: Add Trivy Scan Results to Job Summary
         run: |
           echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
