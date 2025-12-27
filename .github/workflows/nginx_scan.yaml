@@ -56,7 +56,7 @@ jobs:
           output: 'nginx-sbom.spdx.json'
 
       - name: Upload SBOM to GitHub Dependency Submission API
-        uses: actions/dependency-submission-action@v3
+        uses: github/dependency-submission-action@v3
         with:
           manifest-path: nginx-sbom.spdx.json
 
