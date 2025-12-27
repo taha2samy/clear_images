@@ -1,36 +1,36 @@
 # =================================================================
 # Stage 1: The "Builder"
-# Uses the official Redis image to source all necessary files.
+# Uses the official Debian 12 (bookworm) Redis image as a source.
 # =================================================================
 FROM redis:7-bookworm AS builder
+
+# Temporarily switch to the root user to install dependencies.
+USER root
+
+# Install tools, automatically discover all shared library dependencies, and clean up.
+RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
+    mkdir /distroless-deps && \
+    ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
+    rm -rf /var/lib/apt/lists/*
 
 
 # =================================================================
 # Stage 2: The Final "Distroless" Image
-# Starts from a minimal base and copies only essential artifacts.
+# Using Debian 12 base to match the builder stage for library compatibility.
 # =================================================================
 FROM gcr.io/distroless/cc-debian12:nonroot
 
-# Copy required system libraries from the builder stage
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libssl.so.3 /usr/lib/x8-64-linux-gnu/libssl.so.3
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3
-
-# Copy user and group files for correct permissions
+# Copy user and group files for the 'redis' user
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 
-# Copy application data and essential binaries with correct ownership
-COPY --from=builder --chown=redis:redis /data /data
+# Copy all discovered shared libraries from the builder
+COPY --from=builder /distroless-deps/ /lib/x86_64-linux-gnu/
+
+# Copy the Redis server binary
 COPY --from=builder /usr/local/bin/redis-server /usr/local/bin/redis-server
 
-# --- Optional Utilities ---
-# The following binaries are commented out for a minimal production image.
-# Uncomment them if you need debugging or specific features.
-
-# redis-sentinel is not needed for a standalone server instance.
-# COPY --from=builder /usr/local/bin/redis-sentinel /usr/local/bin/redis-sentinel
-
-# redis-cli is useful for debugging but increases the attack surface.
+# Optional: Copy redis-cli for debugging and health checks (currently commented out)
 # COPY --from=builder /usr/local/bin/redis-cli /usr/local/bin/redis-cli
 
 # Copy custom configuration from the build context
@@ -45,7 +45,7 @@ WORKDIR /data
 # Expose the default Redis port
 EXPOSE 6379
 
-# The HEALTHCHECK is disabled as it requires redis-cli. Uncomment if you enable redis-cli.
+# The HEALTHCHECK is disabled as it requires redis-cli.
 # HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
 #   CMD ["/usr/local/bin/redis-cli", "ping"]
 
