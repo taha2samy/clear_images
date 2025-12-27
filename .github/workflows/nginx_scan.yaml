@@ -28,8 +28,6 @@ jobs:
           load: true
           tags: nginx-distroless-ci:latest
 
-      # 1. Scan for Script (JSON Format)
-      # دي الخطوة اللي السكربت محتاجها عشان يرسم الجدول
       - name: Run Trivy (JSON Output)
         uses: aquasecurity/trivy-action@master
         with:
@@ -37,10 +35,8 @@ jobs:
           format: 'json' 
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: false # عشان يظهر كل الثغرات
+          ignore-unfixed: false 
 
-      # 2. Scan for Security Tab (SARIF Format)
-      # دي عشان الـ Github Security Tab
       - name: Run Trivy (SARIF Output)
         uses: aquasecurity/trivy-action@master
         with:
@@ -53,7 +49,6 @@ jobs:
       # 3. Generate The Fancy Table using your Script
       - name: Generate Job Summary Table
         run: |
-          # تأكد إن السكربت موجود في المسار ده في الريبو بتاعك
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh trivy-results.json
 
@@ -78,9 +73,8 @@ jobs:
         with:
           filePath: sbom-files
 
-      # 5. Upload Results to Security Tab
       - name: Upload Trivy Scan Results to GitHub Security Tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
