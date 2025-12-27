@@ -22,11 +22,16 @@ COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=builder /etc/nginx /etc/nginx
 COPY --from=builder /usr/lib/nginx /usr/lib/nginx
 
+# =================================================================
+# THE FINAL FIX IS HERE: Copy the missing shared libraries
+# =================================================================
+COPY --from=builder /lib/x86_64-linux-gnu/libcrypt.so.1 /lib/x86_64-linux-gnu/libcrypt.so.1
+COPY --from=builder /lib/x86_64-linux-gnu/libpcre2-8.so.0 /lib/x86_64-linux-gnu/libpcre2-8.so.0
+
 # Copy required runtime directories for logs and cache
 COPY --from=builder --chown=nginx:nginx /var/log/nginx /var/log/nginx
 COPY --from=builder --chown=nginx:nginx /var/cache/nginx /var/cache/nginx
 COPY --from=builder /tmp /tmp
-COPY --from=builder /lib/x86_64-linux-gnu/libcrypt.so.1 /lib/x86_64-linux-gnu/libcrypt.so.1
 
 # Copy the actual web content for your site
 COPY index.html /usr/share/nginx/html/index.html
