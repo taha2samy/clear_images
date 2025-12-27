@@ -1,0 +1,68 @@
+name: 'Build, Scan, and Report Nginx'
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+
+jobs:
+  build-scan-and-report-nginx:
+    name: Build, Scan, and Report Nginx
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read 
+      security-events: write 
+      actions: read 
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build Nginx Docker image
+        id: build-nginx
+        uses: docker/build-push-action@v5
+        with:
+          context: ./nginx 
+          push: false
+          load: true
+          tags: nginx-distroless-ci:latest
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'nginx-distroless-ci:latest'
+          format: 'sarif' 
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          ignore-unfixed: true
+
+      - name: Generate Markdown Report for Summary
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'nginx-distroless-ci:latest'
+          format: 'table'
+          output: 'trivy-summary.md'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          ignore-unfixed: true
+
+      - name: Generate SBOM for Nginx Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'nginx-distroless-ci:latest'
+          format: 'spdx-json'
+          output: 'nginx-sbom.spdx.json'
+
+      - name: Upload Nginx SBOM as an Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-sbom
+          path: nginx-sbom.spdx.json
+
+      - name: Add Trivy Scan Results to Job Summary
+        run: |
+          echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat trivy-summary.md >> $GITHUB_STEP_SUMMARY
