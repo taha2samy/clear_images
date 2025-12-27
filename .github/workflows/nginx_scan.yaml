@@ -15,8 +15,6 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      dependency-graph: write
-       
 
     steps:
       - name: Checkout Repository
