@@ -55,10 +55,10 @@ jobs:
           format: 'spdx-json'
           output: 'nginx-sbom.spdx.json'
 
-      - name: Upload SBOM to GitHub Dependency Submission API
-        uses: github/dependency-submission-action@v3
+      - name: Upload SBOM to GitHub Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
         with:
-          manifest-path: nginx-sbom.spdx.json
+          filePath: nginx-sbom.spdx.json
 
       - name: Add Trivy Scan Results to Job Summary
         run: |
