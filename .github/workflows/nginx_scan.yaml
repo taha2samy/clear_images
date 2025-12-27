@@ -65,4 +65,4 @@ jobs:
         run: |
           echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          cat trivy-summary.md >> $GITHUB_STEP_SUMMARY
+          tail -n +11 trivy-summary.md >> $GITHUB_STEP_SUMMARY
