@@ -1,0 +1,13 @@
+schemaVersion: '2.0.0'
+metadataTest:
+  user: 'redis'
+  exposedPorts: ['6379']
+commandTests:
+  - name: 'Redis Server Executable'
+    command: 'which'
+    args: ['redis-server']
+    expectedOutput: ['/usr/local/bin/redis-server']
+  - name: 'Redis Ping Test'
+    command: 'redis-cli'
+    args: ['ping']
+    expectedOutput: ['PONG']

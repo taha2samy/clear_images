@@ -1,4 +1,4 @@
-name: 'Build, Scan, and Report nginx'
+name: 'Monorepo CI Pipeline'
 
 on:
   push:
@@ -8,118 +8,129 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-scan-and-report-nginx:
-    name: Build, Scan, and Report nginx
+  security-audit:
+    name: Security Audit
     runs-on: ubuntu-latest
     permissions:
-      contents: write        
-      security-events: write 
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          report_format: sarif
+          report_path: gitleaks-report.sarif
+
+      - name: Upload Gitleaks report
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: gitleaks-report.sarif
+
+  build-and-test-services:
+    name: Build & Test - ${{ matrix.service }}
+    needs: security-audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [nginx, redis]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: ./nginx/Dockerfile
-          output-file: hadolint-report.txt
-          no-fail: true
-
-      - name: Generate Hadolint Summary Report
-        if: always()
-        run: |
-          chmod +x .github/scripts/generate-hadolint-report.sh
-          ./.github/scripts/generate-hadolint-report.sh hadolint-report.txt
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+      - name: Lint Dockerfile for ${{ matrix.service }}
+        uses: hadolint/hadolint-action@v3.1.0
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+          dockerfile: ./${{ matrix.service }}/Dockerfile
 
-      - name: Build nginx Docker image
-        id: build-nginx
+      - name: Build ${{ matrix.service }} Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./nginx 
+          context: ./${{ matrix.service }}
           push: false
           load: true
-          tags: nginx-distroless-ci:latest
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+          tags: ${{ matrix.service }}:ci
 
-      - name: Run Trivy (JSON Output)
-        uses: aquasecurity/trivy-action@0.22.0 
+      - name: Run Container Structure Tests for ${{ matrix.service }}
+        uses: addnab/docker-container-structure-test@v4
         with:
-          image-ref: 'nginx-distroless-ci:latest'
-          format: 'json' 
-          output: 'trivy-results.json'
+          image: ${{ matrix.service }}:ci
+          configFile: ./${{ matrix.service }}/container-tests.yaml
+
+      - name: Scan ${{ matrix.service }} for vulnerabilities
+        id: trivy_scan
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: '${{ matrix.service }}:ci'
+          format: 'json'
+          output: '${{ matrix.service }}-trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Generate SARIF report for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: '${{ matrix.service }}:ci'
+          format: 'sarif'
+          output: '${{ matrix.service }}-trivy.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: false 
 
-      - name: Run Trivy (SARIF Output for GitHub Security Tab)
-        uses: aquasecurity/trivy-action@0.22.0 
+      - name: Generate HTML report for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
         with:
-          image-ref: 'nginx-distroless-ci:latest'
-          format: 'sarif' 
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
-          ignore-unfixed: false
-
-      - name: Run Trivy (HTML Dashboard)
-        uses: aquasecurity/trivy-action@0.22.0 
-        with:
-          image-ref: 'nginx-distroless-ci:latest'
+          image-ref: '${{ matrix.service }}:ci'
           format: 'template'
-          template: '@/contrib/html.tpl' 
-          output: 'trivy-dashboard.html'
+          template: '@/contrib/html.tpl'
+          output: '${{ matrix.service }}-report.html'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
 
-      - name: Upload Trivy HTML Dashboard as an Artifact
-        uses: actions/upload-artifact@v4
+      - name: Generate SBOM for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
         with:
-          name: trivy-dashboard-report
-          path: trivy-dashboard.html
-          
-      - name: Generate Job Summary Table
-        run: |
-          chmod +x .github/scripts/generate-report.sh
-          ./.github/scripts/generate-report.sh trivy-results.json
-
-      - name: Create SBOM Directory
-        run: mkdir -p sbom-files
-
-      - name: Generate SBOM for nginx Image
-        uses: aquasecurity/trivy-action@0.22.0 
-        with:
-          image-ref: 'nginx-distroless-ci:latest'
+          image-ref: '${{ matrix.service }}:ci'
           format: 'spdx-json'
-          output: 'sbom-files/nginx-sbom.spdx.json'
-      - name: Upload SBOM Report as an Artifact
+          output: '${{ matrix.service }}-sbom.spdx.json'
+
+      - name: Upload Reports for ${{ matrix.service }}
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-report 
-          path: sbom-files  
+          name: reports-${{ matrix.service }}
+          path: |
+            ${{ matrix.service }}-report.html
+            ${{ matrix.service }}-sbom.spdx.json
+            ${{ matrix.service }}-trivy.sarif
+            ${{ matrix.service }}-trivy-results.json
 
-
-      - name: Fix PURL Encoding (Replace + with %2B)
-        run: |
-          sed -i 's/%2B/%252B/g' sbom-files/nginx-sbom.spdx.json
-          sed -i 's/+/%252B/g' sbom-files/nginx-sbom.spdx.json
-
-      - name: Upload SBOM to GitHub Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@main
-        with:
-          filePath: sbom-files
-
-      - name: Upload Trivy Scan Results to GitHub Security Tab
+      - name: Upload Trivy SARIF to GitHub Security Tab
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: '${{ matrix.service }}-trivy.sarif'
+
+      - name: Check for critical or high vulnerabilities
+        if: always()
+        run: |
+          VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
+          echo "Found $VULN_COUNT critical/high vulnerabilities with available fixes."
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "POLICY_VIOLATION=true" >> $GITHUB_ENV
+          fi
+
+      - name: Enforce Security Policy
+        if: env.POLICY_VIOLATION == 'true'
+        run: |
+          echo "Failing the job due to detected CRITICAL or HIGH severity vulnerabilities."
+          exit 1

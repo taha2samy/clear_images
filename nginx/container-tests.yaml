@@ -1,0 +1,13 @@
+schemaVersion: '2.0.0'
+metadataTest:
+  user: 'nginx'
+  exposedPorts: ['8080']
+fileExistenceTests:
+  - name: 'Check index.html exists'
+    path: '/usr/share/nginx/html/index.html'
+    shouldExist: true
+commandTests:
+  - name: 'Check Nginx version'
+    command: 'nginx'
+    args: ['-v']
+    expectedOutput: ['nginx/1.27']
