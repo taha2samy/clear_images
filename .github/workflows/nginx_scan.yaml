@@ -68,46 +68,57 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
+      - name: Run Container Structure Tests for ${{ matrix.service }}
+        uses: amardeep2006/container-structure-test-github-action@v1
+        with:
+          dockerimage: ${{ matrix.service }}:ci
+          args: --config ./${{ matrix.service }}/container-tests.yaml
+
+      - name: Install Trivy (Stable Version)
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          install-type: 'binary'
+
       # =================================================================
-      # The problematic test has been COMPLETELY REMOVED as requested.
+      # THE UNBREAKABLE LINEAR FLOW STARTS HERE
+      # Each step MUST succeed for the next one to start.
       # =================================================================
 
       - name: 1. Generate JSON Report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'json'
-          output: '${{ matrix.service }}-trivy-results.json'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
+        run: |
+          # Exit immediately if a command exits with a non-zero status.
+          set -e
+          
+          echo "Attempting to create JSON report for ${{ matrix.service }}..."
+          trivy image --format json --output ${{ matrix.service }}-trivy-results.json --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN ${{ matrix.service }}:ci
+          
+          echo "✅ JSON report command finished. Verifying file exists..."
+          # This ls command will fail if the file doesn't exist, stopping the workflow here.
+          ls -la ${{ matrix.service }}-trivy-results.json
 
       - name: 2. Generate Trivy Summary Report for ${{ matrix.service }}
         run: |
+          # This step will only run if the JSON file was created successfully in the previous step.
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
       - name: 3. Generate SARIF Report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'sarif'
-          output: '${{ matrix.service }}-trivy.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
+        run: |
+          set -e
+          trivy image --format sarif --output ${{ matrix.service }}-trivy.sarif --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN ${{ matrix.service }}:ci
+          ls -la ${{ matrix.service }}-trivy.sarif
 
       - name: 4. Generate HTML Report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'template'
-          template: '@/contrib/html.tpl'
-          output: '${{ matrix.service }}-report.html'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
+        run: |
+          set -e
+          trivy image --format template --template '@/contrib/html.tpl' --output ${{ matrix.service }}-report.html --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN ${{ matrix.service }}:ci
+          ls -la ${{ matrix.service }}-report.html
 
       - name: 5. Generate SBOM Report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'spdx-json'
-          output: '${{ matrix.service }}-sbom.spdx.json'
+        run: |
+          set -e
+          trivy image --format spdx-json --output ${{ matrix.service }}-sbom.spdx.json ${{ matrix.service }}:ci
+          ls -la ${{ matrix.service }}-sbom.spdx.json
 
       - name: 6. Upload All Reports as Artifacts
         if: always()
@@ -130,12 +141,19 @@ jobs:
       - name: 8. Check for Vulnerabilities (Policy Check)
         if: always()
         run: |
-          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then exit 0; fi
+          # Check if the JSON file exists before trying to parse it
+          if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then
+            echo "Warning: JSON report not found, skipping policy check."
+            exit 0
+          fi
           VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select((.Severity == "CRITICAL" or .Severity == "HIGH") and .FixedVersion)] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
-          if [ "$VULN_COUNT" -gt 0 ]; then echo "POLICY_VIOLATION=true" >> $GITHUB_ENV; fi
-      
+          echo "Found $VULN_COUNT critical/high vulnerabilities with available fixes."
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "POLICY_VIOLATION=true" >> $GITHUB_ENV
+          fi
+
       - name: 9. Enforce Security Policy
         if: env.POLICY_VIOLATION == 'true'
         run: |
-          echo "Failing due to CRITICAL/HIGH vulnerabilities with fixes."
+          echo "Failing the job due to detected CRITICAL or HIGH severity vulnerabilities with fixes."
           exit 1
