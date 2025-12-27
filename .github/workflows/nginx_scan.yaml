@@ -7,14 +7,13 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-
 jobs:
   build-scan-and-report-nginx:
     name: Build, Scan, and Report Nginx
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      security-events: write
+      contents: write        
+      security-events: write 
 
     steps:
       - name: Checkout Repository
@@ -47,24 +46,27 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW'
           ignore-unfixed: true
 
+      - name: Create SBOM Directory
+        run: mkdir -p sbom-files
+
       - name: Generate SBOM for Nginx Image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'nginx-distroless-ci:latest'
           format: 'spdx-json'
-          output: 'nginx-sbom.spdx.json'
+          output: 'sbom-files/nginx-sbom.spdx.json'
 
       - name: Upload SBOM to GitHub Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
         with:
-          filePath: nginx-sbom.spdx.json
+          filePath: 'sbom-files' 
 
       - name: Upload Nginx SBOM as an Artifact
         uses: actions/upload-artifact@v4
         with:
           name: nginx-sbom
-          path: nginx-sbom.spdx.json
-
+          path: sbom-files/nginx-sbom.spdx.json
+          
       - name: Add Trivy Scan Results to Job Summary
         run: |
           echo "## Nginx Security Scan Summary" >> $GITHUB_STEP_SUMMARY
