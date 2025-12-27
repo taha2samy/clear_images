@@ -8,9 +8,10 @@ USER root
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
     mkdir /distroless-deps && \
-    ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
+    ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3}' | xargs -I {} cp -v {} /distroless-deps && \
     rm -rf /var/lib/apt/lists/*
 
 USER redis

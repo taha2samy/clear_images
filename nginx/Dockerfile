@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk &
     ldd /usr/sbin/nginx | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
     rm -rf /var/lib/apt/lists/*
 
+USER nginx
+
 
 # =================================================================
 # Stage 2: The Final "Distroless" Image
