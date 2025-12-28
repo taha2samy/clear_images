@@ -1,9 +1,13 @@
+# Start from a modern Debian "Trixie" base image
 FROM debian:trixie-slim
 
+# Set non-interactive frontend for package installations
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install dependencies and tools in a single RUN layer for efficiency
 RUN apt-get update && \
     apt-get -y install --no-install-recommends \
+    # Essential utilities
     sudo \
     curl \
     wget \
@@ -11,6 +15,27 @@ RUN apt-get update && \
     ca-certificates \
     apt-transport-https \
     tar \
+    # Your requested tool
     just && \
+    # --- Install Docker CLI (Official Method) ---
+    # 1. Add Docker's official GPG key
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    chmod a+r /etc/apt/keyrings/docker.gpg && \
+    # 2. Set up the Docker repository
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    # 3. Update apt and install the Docker CLI package
+    apt-get update && \
+    apt-get -y install --no-install-recommends docker-ce-cli && \
+    # --- Clean up to reduce image size ---
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# You can add other configurations here, like creating a non-root user
+# For example:
+# RUN useradd -m vscode && echo "vscode ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vscode
+# USER vscode
+# WORKDIR /home/vscode
