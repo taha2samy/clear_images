@@ -1,6 +1,8 @@
 {
     "name": "Distroless Builder Environment",
-    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "build": {
+        "dockerfile": "dockerfile"
+    },
     "mounts": [
         "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
     ],
@@ -10,7 +12,6 @@
             "moby": true
         }
     },
-    "updateContentCommand": "sudo apt-get update && sudo apt-get -y install --no-install-recommends just",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -22,6 +23,6 @@
             ]
         }
     },
-    "postCreateCommand": "echo 'Welcome! You can now use Docker to build and test images.'",
+    "postCreateCommand": "echo 'Welcome! All tools are installed from the custom Dockerfile.'",
     "remoteUser": "vscode"
 }
