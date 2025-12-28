@@ -1,0 +1,64 @@
+==============================================================================
+   D I S T R O L E S S   P R O J E C T   M A N A G E R
+==============================================================================
+
+USAGE:
+   just <recipe> [service] [args]
+
+AVAILABLE SERVICES:
+   nginx, redis
+
+MAIN RECIPES:
+   build [service]         Build docker images. (Default: all)
+   run   [service] [args]  Run containers. 
+                           You can pass Docker args like ports or flags.
+                           (e.g., just run redis "--privileged")
+   stop  [service]         Stop containers. (Default: all)
+   clean [service]         Stop and remove containers & images.
+   logs  <service>         Tail logs for a specific service.
+   ps                      List running containers for this project.
+
+SBOM RECIPES:
+   sbom  [service]         Generate Software Bill of Materials (SBOM).
+                           Reports are saved to: ./reports/<service>/
+
+DEPENDENCY TRACK RECIPES:
+   dtrack-start            Start Dependency-Track stack.
+   dtrack-stop             Stop Dependency-Track stack.
+   dtrack-restart          Restart Dependency-Track stack.
+
+
+
+# Advanced Run Usage (Passing Arguments)
+just run redis "--privileged"           # Run Redis with privileged mode
+just run nginx "-p 8080:80"             # Run Nginx with custom port
+just run myapp "-e DEBUG=1 -v /data"    # Run with env vars and volumes
+
+
+------------------------------------------------------------------------------
+SBOM CONFIGURATION (Environment Variables):
+   You can change the behavior of the 'sbom' recipe by setting these variables:
+
+   SBOM_TOOL         The scanning tool to use.
+                     Options: trivy (default), syft
+
+   SBOM_FORMAT       The output file format.
+                     Options: spdx-json (default), cyclonedx, json
+
+------------------------------------------------------------------------------
+EXAMPLES:
+   # Standard usage
+   just build nginx        # Build only nginx
+   just run                # Run all services
+   just logs nginx         # View nginx logs
+
+   # SBOM Examples
+   just sbom               # Generate SBOMs for all services (Trivy + SPDX)
+   just sbom redis         # Generate SBOM for redis only
+
+   # Advanced SBOM Usage
+   SBOM_TOOL=syft just sbom                   # Use Syft instead of Trivy
+   SBOM_FORMAT=cyclonedx just sbom            # Output in CycloneDX format
+   SBOM_TOOL=syft SBOM_FORMAT=json just sbom  # Use Syft with simple JSON
+
+==============================================================================

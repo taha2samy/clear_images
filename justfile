@@ -1,78 +1,101 @@
-# ==============================================================================
-# Project Command Runner
-#
-# A modern and clean way to manage this project's Docker services.
-#
-# USAGE:
-#   just <recipe> [service]
-#
-# RECIPES:
-#   build [service]    - Build service image(s). (Default: all)
-#   run [service]      - Run service container(s). (Default: all)
-#   stop [service]     - Stop service container(s). (Default: all)
-#   clean [service]    - Clean (stop, remove container & image). (Default: all)
-#   logs <service>     - View logs for a running service.
-#   ps                 - List running containers for this project.
-#   help               - Show this help message.
-#
-#   dtrack-start       - Start Dependency-Track service for SBOM analysis.
-#   dtrack-stop        - Stop Dependency-Track service.
-#   dtrack-restart     - Restart Dependency-Track service.
-#
-# SERVICES:
-#   nginx, redis, all
-# ==============================================================================
 
-# --- Internal Configuration ---
-# Using a project name prefix makes containers unique and easy to find.
-# ==============================================================================
-# Project Command Runner
-# ==============================================================================
+PROJECT_NAME := "distroless-project"
+REPORTS_DIR  := "./reports"
 
-export DOCKER_API_VERSION := "1.43"
+# Add new services here (space separated)
+SERVICES := "nginx redis"
 
-PROJECT_NAME      := "distroless-project"
-NGINX_CONTAINER   := PROJECT_NAME + "-nginx"
-REDIS_CONTAINER   := PROJECT_NAME + "-redis"
-NGINX_IMAGE       := "my-nginx-app:latest"
-REDIS_IMAGE       := "my-redis-app:latest"
-REPORTS_DIR       := "./reports"
+# Dependency Track
+DTRACK_DIR          := "./dependency-track"
+DTRACK_COMPOSE_URL  := "https://dependencytrack.org/docker-compose.yml"
+DTRACK_COMPOSE_FILE := DTRACK_DIR + "/docker-compose.yml"
 
+# SBOM Configuration
 export SBOM_TOOL   := env_var_or_default("SBOM_TOOL", "trivy")
 export SBOM_FORMAT := env_var_or_default("SBOM_FORMAT", "spdx-json")
 
-SBOM_EXTENSION    := if SBOM_FORMAT == "cyclonedx" {
-    ".cdx.json"
-} else if SBOM_FORMAT == "spdx-json" {
-    ".spdx.json"
-} else {
-    ".json"
-}
-
-DTRACK_DIR        := "./dependency-track"
-DTRACK_COMPOSE_URL:= "https://dependencytrack.org/docker-compose.yml"
-DTRACK_COMPOSE_FILE:= DTRACK_DIR + "/docker-compose.yml"
+SBOM_EXTENSION := if SBOM_FORMAT == "cyclonedx" { ".cdx.json" } else if SBOM_FORMAT == "spdx-json" { ".spdx.json" } else { ".json" }
 
 default: help
 
+
+# Read the help message from the external text file
 help:
-    @grep -E '^# ' justfile | cut -c 3-
+    @cat HELP.txt
+
+build service='all':
+    #!/usr/bin/env sh
+    TARGETS="{{SERVICES}}"
+    if [ "{{service}}" != "all" ]; then TARGETS="{{service}}"; fi
+    for s in $TARGETS; do
+        echo "=> Building $s..."
+        docker build -t "{{PROJECT_NAME}}-$s" "./$s"
+    done
+
+
+
+
+run service='all' args='':
+    #!/usr/bin/env sh
+    TARGETS="{{SERVICES}}"
+    if [ "{{service}}" != "all" ]; then TARGETS="{{service}}"; fi
+    
+    for s in $TARGETS; do
+        echo "=> Starting $s with args: {{args}}..."
+        just _internal-stop "{{PROJECT_NAME}}-$s"
+        
+        # Run command: Name + User Args + Image
+        docker run -d --name "{{PROJECT_NAME}}-$s" {{args}} "{{PROJECT_NAME}}-$s"
+    done
+    echo ""
+    just ps
+
+
+
+stop service='all':
+    #!/usr/bin/env sh
+    TARGETS="{{SERVICES}}"
+    if [ "{{service}}" != "all" ]; then TARGETS="{{service}}"; fi
+    for s in $TARGETS; do
+        just _internal-stop "{{PROJECT_NAME}}-$s"
+    done
+    echo "Stop command complete."
+
+clean service='all':
+    #!/usr/bin/env sh
+    TARGETS="{{SERVICES}}"
+    if [ "{{service}}" != "all" ]; then TARGETS="{{service}}"; fi
+    for s in $TARGETS; do
+        echo "=> Cleaning $s..."
+        just _internal-stop "{{PROJECT_NAME}}-$s"
+        docker rmi "{{PROJECT_NAME}}-$s" 2>/dev/null || true
+    done
+    echo "Cleanup complete."
 
 sbom service='all':
-    @echo "--- Generating SBOM ---"
-    @echo "   Tool:   {{SBOM_TOOL}}"
-    @echo "   Format: {{SBOM_FORMAT}}"
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "nginx" ]; then \
-        echo "=> Processing nginx..."; \
-        mkdir -p {{REPORTS_DIR}}/nginx; \
-        just _internal-generate-sbom {{NGINX_IMAGE}} "nginx/nginx-sbom"; \
-    fi
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "redis" ]; then \
-        echo "=> Processing redis..."; \
-        mkdir -p {{REPORTS_DIR}}/redis; \
-        just _internal-generate-sbom {{REDIS_IMAGE}} "redis/redis-sbom"; \
-    fi
-    @echo "Done. SBOMs are organized in sub-directories inside '{{REPORTS_DIR}}'."
+    #!/usr/bin/env sh
+    TARGETS="{{SERVICES}}"
+    if [ "{{service}}" != "all" ]; then TARGETS="{{service}}"; fi
+    echo "--- Generating SBOM (Tool: {{SBOM_TOOL}}) ---"
+    mkdir -p {{REPORTS_DIR}}
+    for s in $TARGETS; do
+        echo "=> Processing $s..."
+        mkdir -p "{{REPORTS_DIR}}/$s"
+        just _internal-generate-sbom "{{PROJECT_NAME}}-$s" "$s/$s-sbom"
+    done
+    echo "Done."
+
+logs service:
+    @echo "--- Tailing logs for {{PROJECT_NAME}}-{{service}} ---"
+    @docker logs -f "{{PROJECT_NAME}}-{{service}}"
+
+ps:
+    @echo "--- Listing running project containers ---"
+    @docker ps --filter "name={{PROJECT_NAME}}-*"
+
+_internal-stop container_name:
+    @docker stop {{container_name}} 2>/dev/null || true
+    @docker rm {{container_name}} 2>/dev/null || true
 
 _internal-generate-sbom image_name output_filename:
     @if [ "{{SBOM_TOOL}}" = "trivy" ]; then \
@@ -88,83 +111,14 @@ _internal-generate-sbom image_name output_filename:
         if [ "$FMT" = "cyclonedx" ]; then FMT="cyclonedx-json"; fi; \
         docker run --rm --pull always \
           -v /var/run/docker.sock:/var/run/docker.sock \
-          -v {{REPORTS_DIR}}:/reports \
           ghcr.io/anchore/syft:latest \
           {{image_name}} -o $FMT \
           > {{REPORTS_DIR}}/{{output_filename}}-syft{{SBOM_EXTENSION}}; \
-    else \
-        echo "Error: Unknown tool '{{SBOM_TOOL}}'. Use 'trivy' or 'syft'."; \
-        exit 1; \
     fi
 
-build service='all':
-    @echo "--- Building service(s): {{service}} ---"
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "nginx" ]; then \
-        echo "=> Building nginx image [{{NGINX_IMAGE}}]..."; \
-        docker build -t {{NGINX_IMAGE}} ./nginx; \
-    fi
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "redis" ]; then \
-        echo "=> Building redis image [{{REDIS_IMAGE}}]..."; \
-        docker build -t {{REDIS_IMAGE}} ./redis; \
-    fi
 
-run service='all':
-    @echo "--- Running service(s): {{service}} ---"
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "nginx" ]; then \
-        echo "=> Starting nginx container [{{NGINX_CONTAINER}}]..."; \
-        just _internal-stop {{NGINX_CONTAINER}}; \
-        docker run -d --name {{NGINX_CONTAINER}} -p 8080:8080 {{NGINX_IMAGE}}; \
-    fi
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "redis" ]; then \
-        echo "=> Starting redis container [{{REDIS_CONTAINER}}]..."; \
-        just _internal-stop {{REDIS_CONTAINER}}; \
-        docker run -d --name {{REDIS_CONTAINER}} {{REDIS_IMAGE}}; \
-    fi
-    @echo; just ps
 
-stop service='all':
-    @echo "--- Stopping service(s): {{service}} ---"
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "nginx" ]; then \
-        just _internal-stop {{NGINX_CONTAINER}}; \
-    fi
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "redis" ]; then \
-        just _internal-stop {{REDIS_CONTAINER}}; \
-    fi
-    @echo "Stop command complete."
 
-clean service='all':
-    @echo "--- Cleaning service(s): {{service}} ---"
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "nginx" ]; then \
-        echo "=> Cleaning up nginx..."; \
-        just _internal-stop {{NGINX_CONTAINER}}; \
-        docker rmi {{NGINX_IMAGE}} 2>/dev/null || true; \
-    fi
-    @if [ "{{service}}" = "all" ] || [ "{{service}}" = "redis" ]; then \
-        echo "=> Cleaning up redis..."; \
-        just _internal-stop {{REDIS_CONTAINER}}; \
-        docker rmi {{REDIS_IMAGE}} 2>/dev/null || true; \
-    fi
-    @echo "Cleanup complete."
-
-logs service:
-    @if [ "{{service}}" = "nginx" ]; then \
-        echo "--- Tailing logs for {{NGINX_CONTAINER}} (Ctrl+C to stop) ---"; \
-        docker logs -f {{NGINX_CONTAINER}}; \
-    elif [ "{{service}}" = "redis" ]; then \
-        echo "--- Tailing logs for {{REDIS_CONTAINER}} (Ctrl+C to stop) ---"; \
-        docker logs -f {{REDIS_CONTAINER}}; \
-    else \
-        echo "Error: Please specify a valid service (nginx or redis) for logs."; \
-        exit 1; \
-    fi
-
-ps:
-    @echo "--- Listing running project containers ---"
-    @docker ps --filter "name={{PROJECT_NAME}}-*"
-
-_internal-stop container_name:
-    @docker stop {{container_name}} 2>/dev/null || true
-    @docker rm {{container_name}} 2>/dev/null || true
 
 # Start Dependency-Track service
 dtrack-start: _dtrack-download _dtrack-patch
