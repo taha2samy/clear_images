@@ -29,6 +29,7 @@ RUN apt-get update && \
       tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     # 3. Update apt and install the Docker CLI package
     apt-get update && \
+    wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq && \
     apt-get -y install --no-install-recommends docker-ce-cli && \
     # --- Clean up to reduce image size ---
     apt-get clean && \

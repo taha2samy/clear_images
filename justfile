@@ -119,47 +119,65 @@ _internal-generate-sbom image_name output_filename:
 
 
 
-
 # Start Dependency-Track service
 dtrack-start: _dtrack-download _dtrack-patch
-	@echo "--- Starting Dependency-Track ---"
-	@docker compose -f {{DTRACK_COMPOSE_FILE}} up -d
-	@echo "==> Dependency-Track is starting. Frontend will be available at the forwarded port 8080."
-	@echo "==> API Server will be at the forwarded port 8081."
+    @echo "--- Starting Dependency-Track ---"
+    @docker compose -f {{DTRACK_COMPOSE_FILE}} up -d
+    @echo "----------------------------------------------------------------"
+    @if [ -n "$$CODESPACE_NAME" ]; then \
+        echo "==> Environment: GitHub Codespaces"; \
+        echo "==> Frontend URL: https://$${CODESPACE_NAME}-8080.$${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"; \
+        echo "==> API URL:      https://$${CODESPACE_NAME}-8081.$${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"; \
+    else \
+        echo "==> Environment: Localhost"; \
+        echo "==> Frontend URL: http://localhost:8080"; \
+        echo "==> API URL:      http://localhost:8081"; \
+    fi
+    @echo "----------------------------------------------------------------"
+
 
 # Stop Dependency-Track service
 dtrack-stop:
-	@echo "--- Stopping Dependency-Track ---"
-	@if [ -f {{DTRACK_COMPOSE_FILE}} ]; then \
-		docker compose -f {{DTRACK_COMPOSE_FILE}} down; \
-	fi
-	@echo "--- Dependency-Track stopped ---"
+    @echo "--- Stopping Dependency-Track ---"
+    @if [ -f {{DTRACK_COMPOSE_FILE}} ]; then \
+        docker compose -f {{DTRACK_COMPOSE_FILE}} down; \
+    fi
+    @echo "--- Dependency-Track stopped ---"
+
 
 # Restart Dependency-Track service
 dtrack-restart: dtrack-stop dtrack-start
 
+
 # "Private" recipe to download the compose file if it doesn't exist
 _dtrack-download:
-	@if [ ! -f {{DTRACK_COMPOSE_FILE}} ]; then \
-		echo "=> Downloading docker-compose.yml for Dependency-Track..."; \
-		mkdir -p {{DTRACK_DIR}}; \
-		curl -fsSL {{DTRACK_COMPOSE_URL}} -o {{DTRACK_COMPOSE_FILE}}; \
-	fi
+    @if [ ! -f {{DTRACK_COMPOSE_FILE}} ]; then \
+        echo "=> Downloading docker-compose.yml for Dependency-Track..."; \
+        mkdir -p {{DTRACK_DIR}}; \
+        curl -fsSL {{DTRACK_COMPOSE_URL}} -o {{DTRACK_COMPOSE_FILE}}; \
+    fi
+
 
 # "Private" recipe to patch the compose file for Codespaces and similar environments
 _dtrack-patch:
-	@# Patch API_BASE_URL only if DTRACK_API_URL is set
-	@if [ -n "$$DTRACK_API_URL" ]; then \
-		echo "=> Found DTRACK_API_URL. Patching frontend API_BASE_URL..."; \
-		yq -i '.services.frontend.environment.API_BASE_URL = strenv(DTRACK_API_URL)' {{DTRACK_COMPOSE_FILE}}; \
-	else \
-		echo "=> DTRACK_API_URL not set. Skipping API_BASE_URL patch."; \
-	fi
+    @# Detect Codespaces environment and set API URL automatically if not provided
+    @if [ -z "$$DTRACK_API_URL" ] && [ -n "$$CODESPACE_NAME" ]; then \
+        export DTRACK_API_URL="https://$${CODESPACE_NAME}-8081.$${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"; \
+        echo "=> Auto-detected Codespaces API URL: $$DTRACK_API_URL"; \
+    fi
+    
+    @# Patch API_BASE_URL (uses DTRACK_API_URL from env or the auto-detected one above)
+    @if [ -n "$$DTRACK_API_URL" ]; then \
+        echo "=> Patching frontend API_BASE_URL to: $$DTRACK_API_URL"; \
+        yq -i '.services.frontend.environment.API_BASE_URL = strenv(DTRACK_API_URL)' {{DTRACK_COMPOSE_FILE}}; \
+    else \
+        echo "=> DTRACK_API_URL not set. Skipping API_BASE_URL patch (Defaulting to localhost)."; \
+    fi
 
-	@# Always enable and configure CORS for development environments (Codespaces)
-	@echo "=> Enabling CORS in apiserver..."
-	@yq -i '.services.apiserver.environment.ALPINE_CORS_ENABLED = "true"' {{DTRACK_COMPOSE_FILE}}
-	@yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_ORIGIN = "*"' {{DTRACK_COMPOSE_FILE}}
-	@yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_METHODS = "GET,POST,PUT,DELETE,OPTIONS"' {{DTRACK_COMPOSE_FILE}}
-	@yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_HEADERS = "*"' {{DTRACK_COMPOSE_FILE}}
-	@yq -i '.services.apiserver.environment.ALPINE_CORS_EXPOSE_HEADERS = "*"' {{DTRACK_COMPOSE_FILE}}
+    @# Always enable and configure CORS for development environments
+    @echo "=> Enabling CORS in apiserver..."
+    @yq -i '.services.apiserver.environment.ALPINE_CORS_ENABLED = "true"' {{DTRACK_COMPOSE_FILE}}
+    @yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_ORIGIN = "*"' {{DTRACK_COMPOSE_FILE}}
+    @yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_METHODS = "GET,POST,PUT,DELETE,OPTIONS"' {{DTRACK_COMPOSE_FILE}}
+    @yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_HEADERS = "*"' {{DTRACK_COMPOSE_FILE}}
+    @yq -i '.services.apiserver.environment.ALPINE_CORS_EXPOSE_HEADERS = "*"' {{DTRACK_COMPOSE_FILE}}
