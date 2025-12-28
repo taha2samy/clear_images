@@ -8,11 +8,9 @@
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
             "version": "latest",
             "moby": true
-        },
-        "ghcr.io/devcontainers-contrib/features/hadolint:1": {}
+        }
     },
-    // Modified this line to also install 'just'
-    "onCreateCommand": "apt-get update && export DEBIAN_FRONTEND=noninteractive && apt-get -y install --no-install-recommends wget apt-transport-https ca-certificates gnupg just && wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null && echo 'deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main' | tee -a /etc/apt/sources.list.d/trivy.list && apt-get update && apt-get -y install --no-install-recommends trivy",
+    "onCreateCommand": "apt-get update && export DEBIAN_FRONTEND=noninteractive && apt-get -y install --no-install-recommends wget apt-transport-https ca-certificates gnupg just && \\\nwget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null && \\\necho 'deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main' | tee -a /etc/apt/sources.list.d/trivy.list && \\\nchmod +x /usr/local/bin/hadolint && \\\napt-get update && apt-get -y install --no-install-recommends trivy",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -20,10 +18,10 @@
                 "hadolint.hadolint",
                 "redhat.vscode-yaml",
                 "timonwong.shellcheck",
-                "skellock.just" // Optional: Added the extension for 'just' syntax highlighting
+                "skellock.just"
             ]
         }
     },
-    "postCreateCommand": "echo 'Welcome! Docker, Hadolint, Trivy, and Just are installed.'",
+    "postCreateCommand": "echo 'Welcome! Docker, Trivy, and Just are installed.'",
     "remoteUser": "vscode"
 }
