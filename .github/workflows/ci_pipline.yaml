@@ -109,6 +109,13 @@ jobs:
           format: 'spdx-json'
           output: '${{ matrix.service }}-sbom.spdx.json'
 
+      - name: 5b. Generate Syft SBOM for ${{ matrix.service }}
+        run: |
+          mkdir -p ${{ matrix.service }}/sbom
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $PWD:/workdir anchore/syft:latest \
+            ${{ matrix.service }}:ci -o cyclonedx-json > $PWD/${{ matrix.service }}-sbom.cdx.json
+
       - name: 6. Upload All Reports as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,6 +126,7 @@ jobs:
             ${{ matrix.service }}-trivy.sarif
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
+            ${{ matrix.service }}-sbom.cdx.json
           if-no-files-found: 'warn'
 
       - name: 7. Upload Trivy SARIF to GitHub Security Tab
