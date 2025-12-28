@@ -1,4 +1,4 @@
-name: 'repo CI Pipeline'
+name: 'CI Pipeline'
 
 on:
   push:
@@ -21,19 +21,19 @@ jobs:
       - name: Scan repository for secrets
         uses: gitleaks/gitleaks-action@v2
 
-      - name: Upload Gitleaks report
+      - name: Upload Gitleaks report as SARIF
         if: failure()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gitleaks-report.sarif
 
-  build-and-test-services:
-    name: Build & Test - ${{ matrix.service }}
+  build-and-scan-services:
+    name: Build & Scan - ${{ matrix.service }}
     needs: security-audit
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # ضروري عشان الـ Dependency Graph
-      security-events: write # ضروري عشان Trivy SARIF
+      contents: write       # Required for Dependency Graph submission
+      security-events: write # Required for SARIF upload to Security tab
       packages: read
 
     strategy:
@@ -63,34 +63,28 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      - name: Generate SBOM (Anchore SBOM Action)
+      # ========================================================
+      # 1. Generate SBOM using Syft
+      # ========================================================
+      - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           image: ${{ matrix.service }}:ci
-          format: spdx-json                        
+          format: spdx-json # The required format for the dependency submission action
           output-file: ${{ matrix.service }}-sbom.spdx.json
 
-      - name: Define Correlator for Matrix
-        id: matrix_parser
-        run: |
-            correlator=$(echo '${{ toJSON(matrix) }}' | jq -r 'if . == null then "${{ github.job }}" else "${{ github.job }}(" + ([.[] | tostring] | join(", ")) + ")" end')
-            echo "correlator=$correlator" >> $GITHUB_OUTPUT
-
-      - name: Check SBOM Content
-        run: |
-          echo "--- Displaying contents of ${{ matrix.service }}-sbom.spdx.json ---"
-          cat ${{ matrix.service }}-sbom.spdx.json
-      
+      # ========================================================
+      # 2. Upload SBOM to Dependency Graph
+      # ========================================================
       - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
         with:
           sbom-file: ${{ matrix.service }}-sbom.spdx.json
 
-
       # ========================================================
-      # 3. Trivy Security Scanning
+      # 3. Scan for Vulnerabilities using Trivy
       # ========================================================
-      - name: Trivy Scan - JSON
+      - name: Trivy Scan - JSON Report
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -98,7 +92,7 @@ jobs:
           output: '${{ matrix.service }}-trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: Trivy Scan - SARIF
+      - name: Trivy Scan - SARIF Report
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -106,7 +100,7 @@ jobs:
           output: '${{ matrix.service }}-trivy.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: Trivy Scan - HTML
+      - name: Trivy Scan - HTML Report
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -116,9 +110,9 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
       # ========================================================
-      # 4. Upload Artifacts & Policy Check
+      # 4. Upload Artifacts & Enforce Policy
       # ========================================================
-      - name: Upload All Artifacts
+      - name: Upload All Reports as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -137,16 +131,19 @@ jobs:
           sarif_file: '${{ matrix.service }}-trivy.sarif'
           category: trivy-${{ matrix.service }}
 
-      - name: Check for Critical Vulnerabilities
+      - name: Check for Critical Vulnerabilities with available fixes
         if: always()
+        id: policy_check
         run: |
           if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then exit 0; fi
           VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select((.Severity == "CRITICAL" or .Severity == "HIGH") and .FixedVersion)] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
-          echo "Found $VULN_COUNT critical/high vulnerabilities with fixes."
-          if [ "$VULN_COUNT" -gt 0 ]; then echo "POLICY_VIOLATION=true" >> $GITHUB_ENV; fi
+          echo "Found $VULN_COUNT critical/high vulnerabilities with available fixes."
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "POLICY_VIOLATION=true" >> $GITHUB_ENV
+          fi
 
       - name: Enforce Security Policy
         if: env.POLICY_VIOLATION == 'true'
         run: |
-          echo "Blocking pipeline due to Critical/High vulnerabilities."
+          echo "Failing pipeline due to Critical/High vulnerabilities with available fixes."
           exit 1
