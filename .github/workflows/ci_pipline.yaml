@@ -82,7 +82,7 @@ jobs:
           cat ${{ matrix.service }}-sbom.spdx.json
       
       - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
+        uses: advanced-security/spdx-dependency-submission-action@v0.2.1
         with:
           sbom-file: ${{ matrix.service }}-sbom.spdx.json
 
