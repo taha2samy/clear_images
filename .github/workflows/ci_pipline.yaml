@@ -32,8 +32,9 @@ jobs:
     needs: security-audit
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      security-events: write
+      contents: write       # مهم جداً عشان تقدر ترفع للـ Dependency Graph
+      security-events: write # عشان ترفع الـ SARIF للـ Security Tab
+      packages: read
 
     strategy:
       fail-fast: false
@@ -54,12 +55,6 @@ jobs:
           output-file: ${{ matrix.service }}-hadolint-report.txt
           no-fail: true
 
-      - name: Generate Hadolint Summary Report for ${{ matrix.service }}
-        if: always()
-        run: |
-          chmod +x .github/scripts/generate-hadolint-report.sh
-          ./.github/scripts/generate-hadolint-report.sh ${{ matrix.service }}-hadolint-report.txt
-
       - name: Build ${{ matrix.service }} Docker image
         uses: docker/build-push-action@v5
         with:
@@ -68,11 +63,12 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      # =================================================================
-      # The problematic test has been COMPLETELY REMOVED as requested.
-      # =================================================================
-
-      - name: 1. Generate JSON Report for ${{ matrix.service }}
+      # ----------------------------------------------------------------
+      # TRIVY SECTION (Vulnerability Scanning)
+      # ----------------------------------------------------------------
+      
+      # 1. Generate JSON (for logic check later)
+      - name: Trivy Scan - JSON
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -80,12 +76,8 @@ jobs:
           output: '${{ matrix.service }}-trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: 2. Generate Trivy Summary Report for ${{ matrix.service }}
-        run: |
-          chmod +x .github/scripts/generate-report.sh
-          ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
-
-      - name: 3. Generate SARIF Report for ${{ matrix.service }}
+      # 2. Generate SARIF (for GitHub Security Tab)
+      - name: Trivy Scan - SARIF
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -93,7 +85,8 @@ jobs:
           output: '${{ matrix.service }}-trivy.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: 4. Generate HTML Report for ${{ matrix.service }}
+      # 3. Generate HTML (Human readable artifact)
+      - name: Trivy Scan - HTML
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -102,20 +95,29 @@ jobs:
           output: '${{ matrix.service }}-report.html'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: 5. Generate SBOM Report for ${{ matrix.service }}
-        uses: aquasecurity/trivy-action@0.22.0
+      # ----------------------------------------------------------------
+      # SYFT SECTION (SBOM Generation & Dependency Graph)
+      # ----------------------------------------------------------------
+
+      # 4. Generate SBOM using Syft (SPDX format is best for Dependency Graph)
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
         with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'spdx-json'
-          output: '${{ matrix.service }}-sbom.spdx.json'
+          image: ${{ matrix.service }}:ci
+          format: spdx-json
+          output-file: ${{ matrix.service }}-sbom.spdx.json
 
-      - name: 6. Generate Syft SBOM for ${{ matrix.service }}
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $PWD:/workdir anchore/syft:latest \
-            ${{ matrix.service }}:ci -o cyclonedx-json > $PWD/${{ matrix.service }}-syft.cdx.json
+      # 5. Upload SBOM to GitHub Dependency Graph
+      - name: Submit SBOM to Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
+        with:
+          sbom-file: ${{ matrix.service }}-sbom.spdx.json
 
-      - name: 7. Upload All Reports as Artifacts
+      # ----------------------------------------------------------------
+      # UPLOADS & CHECKS
+      # ----------------------------------------------------------------
+
+      - name: Upload All Reports as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -125,30 +127,26 @@ jobs:
             ${{ matrix.service }}-trivy.sarif
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
-            ${{ matrix.service }}-syft.cdx.json
+            ${{ matrix.service }}-hadolint-report.txt
           if-no-files-found: 'warn'
 
-      - name: 8. Upload Trivy SARIF to GitHub Security Tab
+      - name: Upload Trivy SARIF to GitHub Security Tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: '${{ matrix.service }}-trivy.sarif'
+          category: trivy-${{ matrix.service }}
 
-
-      - name: Upload SPDX SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
-        with:
-          sbom-file: ${{ matrix.service }}-sbom.spdx.json
-
-
-      - name: 9. Check for Vulnerabilities (Policy Check)
+      - name: Check for Vulnerabilities (Policy Check)
         if: always()
         run: |
           if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then exit 0; fi
+          # Check for Critical/High vulnerabilities that have a fix available
           VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select((.Severity == "CRITICAL" or .Severity == "HIGH") and .FixedVersion)] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
+          echo "Found $VULN_COUNT critical/high vulnerabilities with fixes."
           if [ "$VULN_COUNT" -gt 0 ]; then echo "POLICY_VIOLATION=true" >> $GITHUB_ENV; fi
 
-      - name: 10. Enforce Security Policy
+      - name: Enforce Security Policy
         if: env.POLICY_VIOLATION == 'true'
         run: |
           echo "Failing due to CRITICAL/HIGH vulnerabilities with fixes."
