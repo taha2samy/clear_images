@@ -115,22 +115,7 @@ jobs:
             -v $PWD:/workdir anchore/syft:latest \
             ${{ matrix.service }}:ci -o cyclonedx-json > $PWD/${{ matrix.service }}-syft.cdx.json
 
-      - name: 7. Convert Syft SBOM to SARIF
-        run: |
-          curl -L https://github.com/CycloneDX/cyclonedx-cli/releases/download/0.18.1/cyclonedx-cli-0.18.1-linux.zip -o cyclonedx-cli.zip
-          unzip cyclonedx-cli.zip -d cyclonedx-cli
-          chmod +x cyclonedx-cli/cyclonedx
-          ./cyclonedx-cli/cyclonedx convert \
-            -i $PWD/${{ matrix.service }}-syft.cdx.json \
-            -o $PWD/${{ matrix.service }}-syft.sarif \
-            -f sarif
-
-      - name: 8. Upload Syft SARIF to GitHub Security Tab
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: '${{ matrix.service }}-syft.sarif'
-
-      - name: 9. Upload All Reports as Artifacts
+      - name: 7. Upload All Reports as Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -141,23 +126,22 @@ jobs:
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
             ${{ matrix.service }}-syft.cdx.json
-            ${{ matrix.service }}-syft.sarif
           if-no-files-found: 'warn'
 
-      - name: 10. Upload Trivy SARIF to GitHub Security Tab
+      - name: 8. Upload Trivy SARIF to GitHub Security Tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: '${{ matrix.service }}-trivy.sarif'
 
-      - name: 11. Check for Vulnerabilities (Policy Check)
+      - name: 9. Check for Vulnerabilities (Policy Check)
         if: always()
         run: |
           if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then exit 0; fi
           VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select((.Severity == "CRITICAL" or .Severity == "HIGH") and .FixedVersion)] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
           if [ "$VULN_COUNT" -gt 0 ]; then echo "POLICY_VIOLATION=true" >> $GITHUB_ENV; fi
 
-      - name: 12. Enforce Security Policy
+      - name: 10. Enforce Security Policy
         if: env.POLICY_VIOLATION == 'true'
         run: |
           echo "Failing due to CRITICAL/HIGH vulnerabilities with fixes."
