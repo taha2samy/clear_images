@@ -23,5 +23,5 @@
         }
     },
     "postCreateCommand": "echo 'Welcome! All tools are installed from the custom Dockerfile.'",
-    "remoteUser": "vscode"
+    "remoteUser": "root"
 }
