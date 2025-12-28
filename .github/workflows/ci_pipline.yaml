@@ -63,19 +63,26 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      # ========================================================
-      # 1. Generate SBOM and upload it to Dependency Graph in ONE step
-      # ========================================================
       - name: Generate and Submit SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           image: ${{ matrix.service }}:ci
           format: spdx-json
           output-file: ${{ matrix.service }}-sbom.spdx.json
-          dependency-snapshot: true # <-- THIS IS THE FIX. It tells Syft to upload the SBOM itself.
+          dependency-snapshot: true 
+          
+      - name: 1. Generate JSON Report for ${{ matrix.service }}
+        uses: aquasecurity/trivy-action@0.22.0
+        with:
+          image-ref: '${{ matrix.service }}:ci'
+          format: 'json'
+          output: '${{ matrix.service }}-trivy-results.json'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      # The old, problematic submission step has been completely removed.
-
+      - name: Generate Trivy Summary Report for ${{ matrix.service }}
+        run: |
+          chmod +x .github/scripts/generate-report.sh
+          ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
       # ========================================================
       # 2. Scan for Vulnerabilities using Trivy
       # ========================================================
