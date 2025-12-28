@@ -136,13 +136,13 @@ jobs:
 
 
       - name: Upload SPDX SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@latest
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
         with:
           sbom-file: ${{ matrix.service }}-sbom.spdx.json
 
 
       - name: Upload SPDX SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@latest
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
         with:
           sbom-file: ${{ matrix.service }}-sbom.spdx.json
 
