@@ -76,11 +76,16 @@ jobs:
             correlator=$(echo '${{ toJSON(matrix) }}' | jq -r 'if . == null then "${{ github.job }}" else "${{ github.job }}(" + ([.[] | tostring] | join(", ")) + ")" end')
             echo "correlator=$correlator" >> $GITHUB_OUTPUT
 
+      - name: Check SBOM Content
+        run: |
+          echo "--- Displaying contents of ${{ matrix.service }}-sbom.spdx.json ---"
+          cat ${{ matrix.service }}-sbom.spdx.json
+      
       - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
+        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
         with:
-          filePath: ${{ matrix.service }}-sbom.spdx.json
-          correlator: ${{ steps.matrix_parser.outputs.correlator }}
+          sbom-file: ${{ matrix.service }}-sbom.spdx.json
+
 
       # ========================================================
       # 3. Trivy Security Scanning
