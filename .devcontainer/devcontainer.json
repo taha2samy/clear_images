@@ -1,0 +1,37 @@
+{
+    "name": "Distroless Builder Environment",
+    // Use Microsoft's base development image, which includes many common tools.
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    // This is the most critical part: mount the Docker socket from the host.
+    // This allows you to build and run Docker images from *inside* the Dev Container.
+    "mounts": [
+        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+    ],
+    // "Features" are an easy way to add tools and runtimes to the container.
+    "features": {
+        // Installs the Docker CLI inside the container.
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "latest",
+            "moby": true
+        },
+        // Installs the Trivy CLI directly for easy vulnerability scanning.
+        "ghcr.io/aquasecurity/devcontainer-feature/trivy:1": {},
+        // Installs the Hadolint CLI for linting Dockerfiles.
+        "ghcr.io/devcontainers-contrib/features/hadolint:1": {}
+    },
+    // Customize VS Code by automatically installing useful extensions.
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.vscode-docker",
+                "hadolint.hadolint",
+                "redhat.vscode-yaml",
+                "timonwong.shellcheck"
+            ]
+        }
+    },
+    // A command to run once after the container is created.
+    "postCreateCommand": "echo 'Welcome to the Dev Container! You can now build and test the Dockerfiles.'",
+    // Run as a non-root user inside the container for better security.
+    "remoteUser": "vscode"
+}
