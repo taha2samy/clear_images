@@ -32,8 +32,8 @@ jobs:
     needs: security-audit
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # Required for Dependency Graph submission
-      security-events: write # Required for SARIF upload to Security tab
+      contents: write     
+      security-events: write
       packages: read
 
     strategy:
@@ -71,7 +71,7 @@ jobs:
           output-file: ${{ matrix.service }}-sbom.spdx.json
           dependency-snapshot: true 
           
-      - name: 1. Generate JSON Report for ${{ matrix.service }}
+      - name: Generate JSON Report for ${{ matrix.service }}
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -83,9 +83,7 @@ jobs:
         run: |
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
-      # ========================================================
-      # 2. Scan for Vulnerabilities using Trivy
-      # ========================================================
+
       - name: Trivy Scan - JSON Report
         uses: aquasecurity/trivy-action@0.22.0
         with:
