@@ -32,8 +32,8 @@ jobs:
     needs: security-audit
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # مهم جداً عشان تقدر ترفع للـ Dependency Graph
-      security-events: write # عشان ترفع الـ SARIF للـ Security Tab
+      contents: write       # ضروري عشان الـ Dependency Graph
+      security-events: write # ضروري عشان Trivy SARIF
       packages: read
 
     strategy:
@@ -63,11 +63,28 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      # ----------------------------------------------------------------
-      # TRIVY SECTION (Vulnerability Scanning)
-      # ----------------------------------------------------------------
-      
-      # 1. Generate JSON (for logic check later)
+      - name: Generate SBOM (Anchore SBOM Action)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ matrix.service }}:ci
+          format: spdx-json                        
+          output-file: ${{ matrix.service }}-sbom.spdx.json
+
+      - name: Define Correlator for Matrix
+        id: matrix_parser
+        run: |
+            correlator=$(echo '${{ toJSON(matrix) }}' | jq -r 'if . == null then "${{ github.job }}" else "${{ github.job }}(" + ([.[] | tostring] | join(", ")) + ")" end')
+            echo "correlator=$correlator" >> $GITHUB_OUTPUT
+
+      - name: Submit SBOM to Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
+        with:
+          filePath: ${{ matrix.service }}-sbom.spdx.json
+          correlator: ${{ steps.matrix_parser.outputs.correlator }}
+
+      # ========================================================
+      # 3. Trivy Security Scanning
+      # ========================================================
       - name: Trivy Scan - JSON
         uses: aquasecurity/trivy-action@0.22.0
         with:
@@ -76,7 +93,6 @@ jobs:
           output: '${{ matrix.service }}-trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      # 2. Generate SARIF (for GitHub Security Tab)
       - name: Trivy Scan - SARIF
         uses: aquasecurity/trivy-action@0.22.0
         with:
@@ -85,7 +101,6 @@ jobs:
           output: '${{ matrix.service }}-trivy.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      # 3. Generate HTML (Human readable artifact)
       - name: Trivy Scan - HTML
         uses: aquasecurity/trivy-action@0.22.0
         with:
@@ -95,29 +110,10 @@ jobs:
           output: '${{ matrix.service }}-report.html'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      # ----------------------------------------------------------------
-      # SYFT SECTION (SBOM Generation & Dependency Graph)
-      # ----------------------------------------------------------------
-
-      # 4. Generate SBOM using Syft (SPDX format is best for Dependency Graph)
-      - name: Generate SBOM (Syft)
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ matrix.service }}:ci
-          format: spdx-json
-          output-file: ${{ matrix.service }}-sbom.spdx.json
-
-      # 5. Upload SBOM to GitHub Dependency Graph
-      - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.4.1
-        with:
-          sbom-file: ${{ matrix.service }}-sbom.spdx.json
-
-      # ----------------------------------------------------------------
-      # UPLOADS & CHECKS
-      # ----------------------------------------------------------------
-
-      - name: Upload All Reports as Artifacts
+      # ========================================================
+      # 4. Upload Artifacts & Policy Check
+      # ========================================================
+      - name: Upload All Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -128,20 +124,18 @@ jobs:
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
             ${{ matrix.service }}-hadolint-report.txt
-          if-no-files-found: 'warn'
 
-      - name: Upload Trivy SARIF to GitHub Security Tab
+      - name: Upload Trivy SARIF to Security Tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: '${{ matrix.service }}-trivy.sarif'
           category: trivy-${{ matrix.service }}
 
-      - name: Check for Vulnerabilities (Policy Check)
+      - name: Check for Critical Vulnerabilities
         if: always()
         run: |
           if [ ! -f "${{ matrix.service }}-trivy-results.json" ]; then exit 0; fi
-          # Check for Critical/High vulnerabilities that have a fix available
           VULN_COUNT=$(jq 'if .Results then ([.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select((.Severity == "CRITICAL" or .Severity == "HIGH") and .FixedVersion)] | length) else 0 end' '${{ matrix.service }}-trivy-results.json')
           echo "Found $VULN_COUNT critical/high vulnerabilities with fixes."
           if [ "$VULN_COUNT" -gt 0 ]; then echo "POLICY_VIOLATION=true" >> $GITHUB_ENV; fi
@@ -149,5 +143,5 @@ jobs:
       - name: Enforce Security Policy
         if: env.POLICY_VIOLATION == 'true'
         run: |
-          echo "Failing due to CRITICAL/HIGH vulnerabilities with fixes."
+          echo "Blocking pipeline due to Critical/High vulnerabilities."
           exit 1
