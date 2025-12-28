@@ -9,10 +9,10 @@ FROM nginxinc/nginx-unprivileged:1.27-bookworm AS builder
 USER root
 
 # Install necessary tools, discover dependencies, then clean up.
-RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
-    mkdir /distroless-deps && \
-    ldd /usr/sbin/nginx | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
-    rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
+#     mkdir /distroless-deps && \
+#     ldd /usr/sbin/nginx | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
+#     rm -rf /var/lib/apt/lists/*
 
 USER nginx
 
@@ -28,7 +28,11 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 
 # Copy all discovered shared libraries from the builder
-COPY --from=builder /distroless-deps/ /lib/x86_64-linux-gnu/
+# COPY --from=builder /distroless-deps/ /lib/x86_64-linux-gnu/
+
+COPY --from=builder /lib/x86_64-linux-gnu/ /lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/ /usr/lib/x86_64-linux-gnu/
+
 
 # Copy the Nginx binary itself
 COPY --from=builder /usr/sbin/nginx /usr/sbin/nginx

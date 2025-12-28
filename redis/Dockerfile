@@ -8,11 +8,10 @@ USER root
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
-    mkdir /distroless-deps && \
-    ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3}' | xargs -I {} cp -v {} /distroless-deps && \
-    rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
+#     mkdir /distroless-deps && \
+#     ldd /usr/local/bin/redis-server | awk 'NF == 4 {print $3}' | xargs -I {} cp -v {} /distroless-deps && \
+#     rm -rf /var/lib/apt/lists/*
 
 USER redis
 # =================================================================
@@ -26,7 +25,11 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 
 # Copy all discovered shared libraries from the builder
-COPY --from=builder /distroless-deps/ /lib/x86_64-linux-gnu/
+# COPY --from=builder /distroless-deps/ /lib/x86_64-linux-gnu/
+
+
+COPY --from=builder /lib/x86_64-linux-gnu/ /lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/ /usr/lib/x86_64-linux-gnu/
 
 # Copy the Redis server binary
 COPY --from=builder /usr/local/bin/redis-server /usr/local/bin/redis-server
