@@ -9,14 +9,13 @@
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
             "version": "latest",
-            "moby": true
+            "moby": false
         }
     },
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-azuretools.vscode-docker",
-                "hadolint.hadolint",
                 "redhat.vscode-yaml",
                 "timonwong.shellcheck",
                 "skellock.just"
