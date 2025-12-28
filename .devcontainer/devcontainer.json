@@ -10,7 +10,7 @@
             "moby": true
         }
     },
-    "updateContentCommand": "apt-get update && apt-get -y install --no-install-recommends just",
+    "updateContentCommand": "sudo apt-get update && sudo apt-get -y install --no-install-recommends just",
     "customizations": {
         "vscode": {
             "extensions": [
