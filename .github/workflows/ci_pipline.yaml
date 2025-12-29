@@ -75,10 +75,11 @@ jobs:
         uses: anchore/sbom-action@v0
         with:
           image: ${{ matrix.service }}:ci
-          format: spdx-json
-          output-file: ${{ matrix.service }}-sbom.spdx.json
+          format: cyclonedx-json
+          output-file: ${{ matrix.service }}-sbom.cdx.json
           dependency-snapshot: false
-          upload-artifact: false     
+          upload-artifact: false
+
           
       - name: Generate JSON Report (Trivy)
         uses: aquasecurity/trivy-action@0.22.0
