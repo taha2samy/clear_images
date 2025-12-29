@@ -175,3 +175,11 @@ jobs:
         with:
           name: full-security-reports
           path: all-reports/
+          
+      - name: Delete Intermediate Artifacts
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: |
+            reports-*
+            gitleaks-report
+          failOnError: false 
