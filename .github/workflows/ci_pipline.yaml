@@ -17,6 +17,13 @@ jobs:
       - name: Scan repository for secrets
         uses: gitleaks/gitleaks-action@v2
 
+      - name: Save Gitleaks Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.sarif
+
       - name: Upload Gitleaks report as SARIF
         if: failure()
         uses: github/codeql-action/upload-sarif@v4
@@ -35,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [nginx, redis,super-nginx,super-redis]
+        service: [nginx, redis, super-nginx, super-redis]
 
     steps:
       - name: Checkout Repository
@@ -44,14 +51,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Lint Dockerfile for ${{ matrix.service }}
+      - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./${{ matrix.service }}/Dockerfile
           output-file: ${{ matrix.service }}-hadolint-report.txt
           no-fail: true
 
-      - name: Build ${{ matrix.service }} Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: ./${{ matrix.service }}
@@ -59,15 +66,16 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      - name: Generate and Submit SBOM (Syft)
+      - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           image: ${{ matrix.service }}:ci
           format: spdx-json
           output-file: ${{ matrix.service }}-sbom.spdx.json
-          dependency-snapshot: true 
-          
-      - name: Generate JSON Report for ${{ matrix.service }}
+          dependency-snapshot: false
+          upload-artifact: false
+
+      - name: Generate JSON Report (Trivy)
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -75,20 +83,12 @@ jobs:
           output: '${{ matrix.service }}-trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: Generate Trivy Summary Report for ${{ matrix.service }}
+      - name: Generate Trivy Summary Report
         run: |
           chmod +x .github/scripts/generate-report.sh
           ./.github/scripts/generate-report.sh ${{ matrix.service }}-trivy-results.json
 
-      - name: Trivy Scan - JSON Report
-        uses: aquasecurity/trivy-action@0.22.0
-        with:
-          image-ref: '${{ matrix.service }}:ci'
-          format: 'json'
-          output: '${{ matrix.service }}-trivy-results.json'
-          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
-
-      - name: Trivy Scan - SARIF Report
+      - name: Trivy Scan - SARIF
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -96,7 +96,7 @@ jobs:
           output: '${{ matrix.service }}-trivy.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      - name: Trivy Scan - HTML Report
+      - name: Trivy Scan - HTML
         uses: aquasecurity/trivy-action@0.22.0
         with:
           image-ref: '${{ matrix.service }}:ci'
@@ -105,10 +105,7 @@ jobs:
           output: '${{ matrix.service }}-report.html'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      # ========================================================
-      # 3. Upload Artifacts & Enforce Policy
-      # ========================================================
-      - name: Upload All Reports as Artifacts
+      - name: Upload Service Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -143,3 +140,28 @@ jobs:
         run: |
           echo "Failing pipeline due to Critical/High vulnerabilities with available fixes."
           exit 1
+
+  collect-all-artifacts:
+    name: Collect All Reports
+    needs: [security-audit, build-and-scan-services]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: reports-*
+          merge-multiple: true
+          path: all-reports
+
+      - name: Download Gitleaks Report
+        uses: actions/download-artifact@v4
+        with:
+          name: gitleaks-report
+          path: all-reports
+
+      - name: Upload Final Consolidated Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-security-reports
+          path: all-reports/
