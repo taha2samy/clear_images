@@ -96,7 +96,7 @@ jobs:
             echo "correlator=$correlator" >> $GITHUB_OUTPUT
 
       - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        uses: advanced-security/spdx-dependency-submission-action@v0.2.1
         with:
           filePath: ${{ matrix.service }}-sbom.spdx.json
           correlator: ${{ steps.matrix_parser.outputs.correlator }}
