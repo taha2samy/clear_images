@@ -4,13 +4,32 @@ import datetime
 import os
 import sys
 
+def get_purl(pkg):
+    """
+    Extracts the Package URL (PURL) to uniquely identify a package.
+    If PURL is missing, falls back to a 'name@version' composite key.
+    """
+    if 'externalRefs' in pkg:
+        for ref in pkg['externalRefs']:
+            if ref.get('referenceType') == 'purl':
+                return ref.get('referenceLocator')
+    
+    # Fallback identifier if PURL is unavailable
+    return f"{pkg.get('name')}@{pkg.get('versionInfo')}"
+
 def merge_sboms():
+    """
+    Merges multiple SPDX JSON SBOM files into a single consolidated file.
+    Implements smart deduplication based on Package URL (PURL) to ensure
+    accurate dependency counting in GitHub Dependency Graph.
+    """
     input_pattern = 'all-reports/*-sbom.spdx.json'
     output_file = 'all-reports/merged-sbom.spdx.json'
     repo_name = os.getenv('GITHUB_REPOSITORY', 'unknown/repository')
 
-    print("--- Starting SBOM Merge Process ---")
+    print("--- Starting Smart SBOM Merge Process (PURL-based) ---")
 
+    # Initialize the base structure for the merged SBOM
     merged = {
         'spdxVersion': 'SPDX-2.3',
         'dataLicense': 'CC0-1.0',
@@ -20,25 +39,23 @@ def merge_sboms():
         'creationInfo': {
             'creators': ['Tool: GitHub-Actions-Merge-Script'],
             'created': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
-
         },
         'packages': [],
         'relationships': []
     }
 
-    seen_pkg_ids = set()
+    # Set to track unique packages and prevent duplicates
+    seen_purls = set()
     
-    # طباعة المسار الحالي للتأكد
+    # Debug: Print environment info
     print(f"Current working directory: {os.getcwd()}")
     
-    # البحث عن الملفات
     files = glob.glob(input_pattern)
     print(f"DEBUG: Search pattern used: '{input_pattern}'")
     print(f"DEBUG: Found {len(files)} files: {files}")
 
     if not files:
         print("!!! ERROR: No SBOM files found to merge.")
-        # هنا ممكن نطبع محتويات الفولدر عشان نعرف إيه اللي موجود
         if os.path.exists('all-reports'):
              print(f"DEBUG: Contents of 'all-reports' directory: {os.listdir('all-reports')}")
         else:
@@ -56,18 +73,23 @@ def merge_sboms():
                 
                 print(f"  - Found {len(packages)} packages in this file.")
                 
-                # دمج الباكيجات
+                # Deduplicate and merge packages
                 added_count = 0
                 for pkg in packages:
-                    pkg_id = pkg.get('SPDXID')
-                    if pkg_id and pkg_id not in seen_pkg_ids:
+                    # Identify package by PURL rather than arbitrary SPDXID
+                    purl = get_purl(pkg)
+                    
+                    if purl not in seen_purls:
                         merged['packages'].append(pkg)
-                        seen_pkg_ids.add(pkg_id)
+                        seen_purls.add(purl)
                         added_count += 1
+                    else:
+                        # Duplicate package detected; skipping to avoid double counting
+                        pass
 
                 print(f"  - Added {added_count} unique packages to merged SBOM.")
                 
-                # دمج العلاقات
+                # Merge relationships without filtering
                 for rel in relationships:
                     merged['relationships'].append(rel)
                     
@@ -78,6 +100,7 @@ def merge_sboms():
 
     print("\n--- Final Summary ---")
     print(f"Total unique packages in merged file: {len(merged['packages'])}")
+    print(f"Total relationships collected: {len(merged['relationships'])}")
 
     try:
         with open(output_file, 'w') as f:
