@@ -7,29 +7,20 @@ import sys
 def get_purl(pkg):
     """
     Extracts the Package URL (PURL) to uniquely identify a package.
-    If PURL is missing, falls back to a 'name@version' composite key.
     """
     if 'externalRefs' in pkg:
         for ref in pkg['externalRefs']:
             if ref.get('referenceType') == 'purl':
                 return ref.get('referenceLocator')
-    
-    # Fallback identifier if PURL is unavailable
     return f"{pkg.get('name')}@{pkg.get('versionInfo')}"
 
 def merge_sboms():
-    """
-    Merges multiple SPDX JSON SBOM files into a single consolidated file.
-    Implements smart deduplication based on Package URL (PURL) to ensure
-    accurate dependency counting in GitHub Dependency Graph.
-    """
     input_pattern = 'all-reports/*-sbom.spdx.json'
     output_file = 'all-reports/merged-sbom.spdx.json'
     repo_name = os.getenv('GITHUB_REPOSITORY', 'unknown/repository')
 
-    print("--- Starting Smart SBOM Merge Process (PURL-based) ---")
+    print("--- Starting Advanced SBOM Merge (With ID Remapping) ---")
 
-    # Initialize the base structure for the merged SBOM
     merged = {
         'spdxVersion': 'SPDX-2.3',
         'dataLicense': 'CC0-1.0',
@@ -44,22 +35,14 @@ def merge_sboms():
         'relationships': []
     }
 
-    # Set to track unique packages and prevent duplicates
-    seen_purls = set()
-    
-    # Debug: Print environment info
-    print(f"Current working directory: {os.getcwd()}")
+    # Map to store PURL -> Kept SPDXID
+    # Example: { "pkg:deb/debian/curl@7.0": "SPDXRef-Package-123" }
+    purl_to_id_map = {}
     
     files = glob.glob(input_pattern)
-    print(f"DEBUG: Search pattern used: '{input_pattern}'")
-    print(f"DEBUG: Found {len(files)} files: {files}")
-
+    
     if not files:
-        print("!!! ERROR: No SBOM files found to merge.")
-        if os.path.exists('all-reports'):
-             print(f"DEBUG: Contents of 'all-reports' directory: {os.listdir('all-reports')}")
-        else:
-             print("DEBUG: Directory 'all-reports' does not exist!")
+        print("!!! ERROR: No SBOM files found.")
         return
 
     for file_path in files:
@@ -71,44 +54,55 @@ def merge_sboms():
                 packages = data.get('packages', [])
                 relationships = data.get('relationships', [])
                 
-                print(f"  - Found {len(packages)} packages in this file.")
-                
-                # Deduplicate and merge packages
-                added_count = 0
-                for pkg in packages:
-                    # Identify package by PURL rather than arbitrary SPDXID
-                    purl = get_purl(pkg)
-                    
-                    if purl not in seen_purls:
-                        merged['packages'].append(pkg)
-                        seen_purls.add(purl)
-                        added_count += 1
-                    else:
-                        # Duplicate package detected; skipping to avoid double counting
-                        pass
+                # Map old IDs in this file to new/existing IDs in merged file
+                # Example: { "SPDXRef-OLD-ID": "SPDXRef-NEW-KEPT-ID" }
+                file_id_map = {}
 
-                print(f"  - Added {added_count} unique packages to merged SBOM.")
-                
-                # Merge relationships without filtering
+                # 1. Process Packages
+                for pkg in packages:
+                    purl = get_purl(pkg)
+                    original_id = pkg.get('SPDXID')
+
+                    if purl in purl_to_id_map:
+                        # Case: Duplicate found. 
+                        # We skip adding the package, but map the Old ID to the Existing ID.
+                        kept_id = purl_to_id_map[purl]
+                        file_id_map[original_id] = kept_id
+                    else:
+                        # Case: New Package.
+                        # Add to merged list and register in maps.
+                        merged['packages'].append(pkg)
+                        purl_to_id_map[purl] = original_id
+                        file_id_map[original_id] = original_id # Maps to itself
+
+                # 2. Process Relationships (Fix Broken Links)
                 for rel in relationships:
-                    merged['relationships'].append(rel)
+                    spdx_elem_id = rel.get('spdxElementId')
+                    related_elem_id = rel.get('relatedSpdxElement')
+
+                    # Remap IDs if they point to skipped packages
+                    # If ID is not in map (e.g. DOCUMENT root), keep as is.
+                    new_spdx_id = file_id_map.get(spdx_elem_id, spdx_elem_id)
+                    new_related_id = file_id_map.get(related_elem_id, related_elem_id)
+
+                    # Update relationship with valid IDs
+                    rel['spdxElementId'] = new_spdx_id
+                    rel['relatedSpdxElement'] = new_related_id
                     
-        except json.JSONDecodeError:
-            print(f"!!! Error: Failed to decode JSON from {file_path}")
+                    # Avoid self-referencing loops (optional cleanup)
+                    if new_spdx_id != new_related_id:
+                        merged['relationships'].append(rel)
+                    
         except Exception as e:
             print(f"!!! Error processing {file_path}: {str(e)}")
 
     print("\n--- Final Summary ---")
-    print(f"Total unique packages in merged file: {len(merged['packages'])}")
-    print(f"Total relationships collected: {len(merged['relationships'])}")
+    print(f"Total unique packages: {len(merged['packages'])}")
+    print(f"Total relationships (remapped): {len(merged['relationships'])}")
 
-    try:
-        with open(output_file, 'w') as f:
-            json.dump(merged, f, indent=2)
-        print(f"Successfully created merged SBOM at: {output_file}")
-    except Exception as e:
-        print(f"Error writing output file: {str(e)}")
-        sys.exit(1)
+    with open(output_file, 'w') as f:
+        json.dump(merged, f, indent=2)
+    print(f"Merged SBOM saved to: {output_file}")
 
 if __name__ == "__main__":
     merge_sboms()
