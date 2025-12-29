@@ -96,7 +96,7 @@ jobs:
             echo "correlator=$correlator" >> $GITHUB_OUTPUT
 
       - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
         with:
           filePath: ${{ matrix.service }}-sbom.spdx.json
           correlator: ${{ steps.matrix_parser.outputs.correlator }}
@@ -155,15 +155,19 @@ jobs:
 
 
 
-  collect-all-artifacts:
-    name: Collect All Reports
-    needs: [security-audit, build-and-scan-services]
+  collect-merge-submit:
+    name: Collect, Merge & Submit
+    needs: [build-and-scan-services, security-audit]
     if: always()
     permissions:
-      contents: write
-      actions: write 
+      contents: write 
+      actions: write  
     runs-on: ubuntu-latest
     steps:
+    
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -176,6 +180,19 @@ jobs:
         with:
           name: gitleaks-report
           path: all-reports
+
+      - name: Merge SBOM Files
+        run: |
+          chmod +x .github/scripts/merge_sboms.py
+          python3 .github/scripts/merge_sboms.py
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Submit Merged SBOM to Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
+        with:
+          filePath: "all-reports/merged-sbom.spdx.json"
+          correlator: "merged-sbom-${{ github.workflow }}"
 
       - name: Upload Final Consolidated Artifact
         uses: actions/upload-artifact@v4
@@ -190,4 +207,3 @@ jobs:
             reports-*
             gitleaks-report
           failOnError: false
-
