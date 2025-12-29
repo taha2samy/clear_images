@@ -1,3 +1,8 @@
+
+
+
+
+
 name: 'CI Pipeline'
 
 on:
@@ -8,27 +13,26 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       security-events: write
+      
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
 
       - name: Scan repository for secrets
         uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ARGS: "--report-path=gitleaks-report.sarif --report-format=sarif --verbose"
 
       - name: Save Gitleaks Report Artifact
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gitleaks-report
           path: gitleaks-report.sarif
-
-      - name: Upload Gitleaks report as SARIF
-        if: failure()
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: gitleaks-report.sarif
 
   build-and-scan-services:
     name: Build & Scan - ${{ matrix.service }}
