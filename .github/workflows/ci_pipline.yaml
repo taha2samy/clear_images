@@ -155,6 +155,9 @@ jobs:
     name: Collect All Reports
     needs: [security-audit, build-and-scan-services]
     if: always()
+    permissions:
+      contents: write
+      actions: write 
     runs-on: ubuntu-latest
     steps:
       - name: Download All Artifacts
