@@ -34,9 +34,6 @@ def merge_sboms():
         'packages': [],
         'relationships': []
     }
-
-    # Map to store PURL -> Kept SPDXID
-    # Example: { "pkg:deb/debian/curl@7.0": "SPDXRef-Package-123" }
     purl_to_id_map = {}
     
     files = glob.glob(input_pattern)
@@ -54,8 +51,6 @@ def merge_sboms():
                 packages = data.get('packages', [])
                 relationships = data.get('relationships', [])
                 
-                # Map old IDs in this file to new/existing IDs in merged file
-                # Example: { "SPDXRef-OLD-ID": "SPDXRef-NEW-KEPT-ID" }
                 file_id_map = {}
 
                 # 1. Process Packages
@@ -64,24 +59,16 @@ def merge_sboms():
                     original_id = pkg.get('SPDXID')
 
                     if purl in purl_to_id_map:
-                        # Case: Duplicate found. 
-                        # We skip adding the package, but map the Old ID to the Existing ID.
                         kept_id = purl_to_id_map[purl]
                         file_id_map[original_id] = kept_id
                     else:
-                        # Case: New Package.
-                        # Add to merged list and register in maps.
                         merged['packages'].append(pkg)
                         purl_to_id_map[purl] = original_id
-                        file_id_map[original_id] = original_id # Maps to itself
-
-                # 2. Process Relationships (Fix Broken Links)
+                        file_id_map[original_id] = original_id 
                 for rel in relationships:
                     spdx_elem_id = rel.get('spdxElementId')
                     related_elem_id = rel.get('relatedSpdxElement')
 
-                    # Remap IDs if they point to skipped packages
-                    # If ID is not in map (e.g. DOCUMENT root), keep as is.
                     new_spdx_id = file_id_map.get(spdx_elem_id, spdx_elem_id)
                     new_related_id = file_id_map.get(related_elem_id, related_elem_id)
 
@@ -89,7 +76,6 @@ def merge_sboms():
                     rel['spdxElementId'] = new_spdx_id
                     rel['relatedSpdxElement'] = new_related_id
                     
-                    # Avoid self-referencing loops (optional cleanup)
                     if new_spdx_id != new_related_id:
                         merged['relationships'].append(rel)
                     
