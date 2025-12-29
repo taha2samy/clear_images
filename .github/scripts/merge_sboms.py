@@ -19,7 +19,8 @@ def merge_sboms():
         'documentNamespace': f'https://github.com/{repo_name}/merged-sbom',
         'creationInfo': {
             'creators': ['Tool: GitHub-Actions-Merge-Script'],
-            'created': datetime.datetime.utcnow().isoformat() + 'Z'
+            'created': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+
         },
         'packages': [],
         'relationships': []
