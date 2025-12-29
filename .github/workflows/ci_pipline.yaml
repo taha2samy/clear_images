@@ -180,9 +180,10 @@ jobs:
           path: all-reports/
           
       - name: Delete Intermediate Artifacts
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: |
             reports-*
             gitleaks-report
-          failOnError: false 
+          failOnError: false
+
