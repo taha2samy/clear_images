@@ -122,6 +122,11 @@ jobs:
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
             ${{ matrix.service }}-hadolint-report.txt
+      - name: Submit SBOM to Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
+        with:
+          filePath: ${{ matrix.service }}-sbom.spdx.json
+          correlator: "sbom-${{ matrix.service }}-${{ github.workflow }}"
 
       - name: Upload Trivy SARIF to Security Tab
         if: always()
@@ -168,18 +173,7 @@ jobs:
           name: gitleaks-report
           path: all-reports
 
-      - name: Merge SBOM Files
-        run: |
-          chmod +x .github/scripts/merge_sboms.py
-          python3 .github/scripts/merge_sboms.py
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
 
-      - name: Submit Merged SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
-        with:
-          filePath: "all-reports/merged-sbom.spdx.json"
-          correlator: "merged-sbom-${{ github.workflow }}"
 
       - name: Upload Final Consolidated Artifact
         uses: actions/upload-artifact@v4
