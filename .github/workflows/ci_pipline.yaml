@@ -71,16 +71,15 @@ jobs:
           load: true
           tags: ${{ matrix.service }}:ci
 
-      # تعديل مهم: نوقف الرفع التلقائي هنا
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
           image: ${{ matrix.service }}:ci
           format: spdx-json
           output-file: ${{ matrix.service }}-sbom.spdx.json
-          dependency-snapshot: false # مش هنرفع من هنا
-          upload-artifact: false     # مش هنرفع artifact من هنا (هنرفعه تحت)
-
+          dependency-snapshot: false
+          upload-artifact: false     
+          
       - name: Generate JSON Report (Trivy)
         uses: aquasecurity/trivy-action@0.22.0
         with:
@@ -89,9 +88,7 @@ jobs:
           output: '${{ matrix.service }}-trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
 
-      # تم حذف خطوات (Define correlator) و (Submit SBOM) من هنا
-      # لأننا هنرفع ملف مدموج في الـ Job الأخير
-      
+
       - name: Generate Trivy Summary Report
         run: |
           chmod +x .github/scripts/generate-report.sh
