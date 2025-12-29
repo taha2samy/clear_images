@@ -123,11 +123,21 @@ jobs:
             ${{ matrix.service }}-report.html
             ${{ matrix.service }}-sbom.spdx.json
             ${{ matrix.service }}-hadolint-report.txt
-      - name: Submit SBOM to Dependency Graph
-        uses: advanced-security/spdx-dependency-submission-action@v0.1.2
-        with:
-          filePath: ${{ matrix.service }}-sbom.spdx.json
-          correlator: "sbom-${{ matrix.service }}-${{ github.workflow }}"
+
+            
+      - name: Build and Submit SBOM to Dependency Graph
+        run: |
+          python3 .github/scripts/submit_sbom_to_github.py \
+            ${{ matrix.service }}-sbom.spdx.json \
+            ${{ matrix.service }} > snapshot.json
+          
+          curl -L -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ github.repository }}/dependency-graph/snapshots \
+            -d @snapshot.json
+
 
       - name: Upload Trivy SARIF to Security Tab
         if: always()
