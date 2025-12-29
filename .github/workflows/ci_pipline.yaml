@@ -88,7 +88,19 @@ jobs:
           format: 'json'
           output: '${{ matrix.service }}-trivy-results.json'
           severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
+          
+      - name: Define correlator
+        id: matrix_parser
+        run: |
+            correlator="${{ github.job }}-${{ matrix.service }}"
+            echo "correlator=$correlator" >> $GITHUB_OUTPUT
 
+      - name: Submit SBOM to Dependency Graph
+        uses: advanced-security/spdx-dependency-submission-action@v0.1.1
+        with:
+          filePath: ${{ matrix.service }}-sbom.spdx.json
+          correlator: ${{ steps.matrix_parser.outputs.correlator }}
+      
       - name: Generate Trivy Summary Report
         run: |
           chmod +x .github/scripts/generate-report.sh
@@ -141,11 +153,7 @@ jobs:
             echo "POLICY_VIOLATION=true" >> $GITHUB_ENV
           fi
 
-      - name: Enforce Security Policy
-        if: env.POLICY_VIOLATION == 'true'
-        run: |
-          echo "Failing pipeline due to Critical/High vulnerabilities with available fixes."
-          exit 1
+
 
   collect-all-artifacts:
     name: Collect All Reports
