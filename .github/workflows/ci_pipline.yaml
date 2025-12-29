@@ -1,8 +1,4 @@
 
-
-
-
-
 name: 'CI Pipeline'
 
 on:
@@ -82,8 +78,8 @@ jobs:
           image: ${{ matrix.service }}:ci
           format: spdx-json
           output-file: ${{ matrix.service }}-sbom.spdx.json
-          dependency-snapshot: false
-          upload-artifact: false
+          dependency-snapshot: true
+          upload-artifact: true
 
       - name: Generate JSON Report (Trivy)
         uses: aquasecurity/trivy-action@0.22.0
