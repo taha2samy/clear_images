@@ -45,7 +45,6 @@ RUN set -eux; \
 # -----------------------------------------------------------
 # 2. Config & Init Helper
 # -----------------------------------------------------------
-# ننسخ الملفات الموجودة عندك أصلاً
 COPY redis.conf /rootfs/etc/redis/redis.conf
 COPY redis-init.c /usr/src/redis-init.c
 
