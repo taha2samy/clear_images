@@ -156,28 +156,62 @@ _dtrack-download:
         mkdir -p {{DTRACK_DIR}}; \
         curl -fsSL {{DTRACK_COMPOSE_URL}} -o {{DTRACK_COMPOSE_FILE}}; \
     fi
-
-
 # "Private" recipe to patch the compose file for Codespaces and similar environments
 _dtrack-patch:
-    @# Detect Codespaces environment and set API URL automatically if not provided
-    @if [ -z "$$DTRACK_API_URL" ] && [ -n "$$CODESPACE_NAME" ]; then \
-        export DTRACK_API_URL="https://$${CODESPACE_NAME}-8081.$${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"; \
-        echo "=> Auto-detected Codespaces API URL: $$DTRACK_API_URL"; \
-    fi
+    #!/usr/bin/env bash
+    set -e
+    COMPOSE_FILE="{{DTRACK_COMPOSE_FILE}}"
     
-    @# Patch API_BASE_URL (uses DTRACK_API_URL from env or the auto-detected one above)
-    @if [ -n "$$DTRACK_API_URL" ]; then \
-        echo "=> Patching frontend API_BASE_URL to: $$DTRACK_API_URL"; \
-        yq -i '.services.frontend.environment.API_BASE_URL = strenv(DTRACK_API_URL)' {{DTRACK_COMPOSE_FILE}}; \
-    else \
-        echo "=> DTRACK_API_URL not set. Skipping API_BASE_URL patch (Defaulting to localhost)."; \
+    # 1. Handle API_BASE_URL
+    if [ -z "$DTRACK_API_URL" ] && [ -n "$CODESPACE_NAME" ]; then
+        DETECTED_URL="https://$CODESPACE_NAME-8081.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
+        echo "=> Auto-detected Codespaces API URL: $DETECTED_URL"
+        yq -i ".services.frontend.environment.API_BASE_URL = \"$DETECTED_URL\"" "$COMPOSE_FILE"
+    elif [ -n "$DTRACK_API_URL" ]; then
+        echo "=> Using provided DTRACK_API_URL: $DTRACK_API_URL"
+        yq -i ".services.frontend.environment.API_BASE_URL = \"$DTRACK_API_URL\"" "$COMPOSE_FILE"
+    else
+        echo "=> No specific API URL detected. Defaulting to localhost config."
     fi
 
-    @# Always enable and configure CORS for development environments
-    @echo "=> Enabling CORS in apiserver..."
-    @yq -i '.services.apiserver.environment.ALPINE_CORS_ENABLED = "true"' {{DTRACK_COMPOSE_FILE}}
-    @yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_ORIGIN = "*"' {{DTRACK_COMPOSE_FILE}}
-    @yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_METHODS = "GET,POST,PUT,DELETE,OPTIONS"' {{DTRACK_COMPOSE_FILE}}
-    @yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_HEADERS = "*"' {{DTRACK_COMPOSE_FILE}}
-    @yq -i '.services.apiserver.environment.ALPINE_CORS_EXPOSE_HEADERS = "*"' {{DTRACK_COMPOSE_FILE}}
+    # 2. Ensure CORS is enabled
+    echo "=> Ensuring CORS is enabled..."
+    yq -i '.services.apiserver.environment.ALPINE_CORS_ENABLED = "true"' "$COMPOSE_FILE"
+    
+    # 3. Set Origin to * only if missing
+    CURRENT_ORIGIN=$(yq '.services.apiserver.environment.ALPINE_CORS_ALLOW_ORIGIN' "$COMPOSE_FILE")
+    if [ "$CURRENT_ORIGIN" = "null" ] || [ -z "$CURRENT_ORIGIN" ]; then
+        echo "=> Setting default CORS Origin to *"
+        yq -i '.services.apiserver.environment.ALPINE_CORS_ALLOW_ORIGIN = "*"' "$COMPOSE_FILE"
+    fi
+
+dtrack-add-trivy:
+    #!/usr/bin/env bash
+    set -e
+    COMPOSE_FILE="{{DTRACK_COMPOSE_FILE}}"
+    TRIVY_TOKEN="MySecretTrivyToken"
+
+    echo "=> Checking if Trivy service exists..."
+    
+    # Check if trivy service is missing
+    if [ "$(yq '.services.trivy' "$COMPOSE_FILE")" = "null" ]; then
+        echo "=> Trivy service not found. Injecting configuration..."
+        
+        # 1. Add the Trivy Service directly using yq env injection
+        # We construct the object incrementally to avoid EOF indentation issues
+        export T_TOKEN="$TRIVY_TOKEN"
+        
+        yq -i '.services.trivy.image = "aquasec/trivy:latest"' "$COMPOSE_FILE"
+        yq -i '.services.trivy.command = "server --listen :8080 --token " + strenv(T_TOKEN)' "$COMPOSE_FILE"
+        yq -i '.services.trivy.ports = ["8085:8080"]' "$COMPOSE_FILE"
+        yq -i '.services.trivy.volumes = ["trivy-cache:/root/.cache/trivy"]' "$COMPOSE_FILE"
+        yq -i '.services.trivy.restart = "unless-stopped"' "$COMPOSE_FILE"
+        
+        # 2. Add the Volume
+        yq -i '.volumes.trivy-cache = {}' "$COMPOSE_FILE"
+        
+        echo "=> Trivy service injected successfully."
+        echo "=> NOTE: Use Token '$TRIVY_TOKEN' and URL 'http://trivy:8080' in Dependency-Track settings."
+    else
+        echo "=> Trivy service already exists. Skipping injection."
+    fi
