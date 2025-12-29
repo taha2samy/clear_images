@@ -81,8 +81,6 @@ RUN set -eux; \
     strip /rootfs/usr/sbin/nginx; \
     cp -r /etc/nginx/* /rootfs/etc/nginx/; \
     \
-    # === [ هنا التعديل المهم لظهور اللوجز ] ===
-    # نربط ملفات اللوج بـ stdout/stderr عشان تظهر في Docker logs
     ln -sf /dev/stdout /rootfs/var/log/nginx/access.log; \
     ln -sf /dev/stderr /rootfs/var/log/nginx/error.log
 
