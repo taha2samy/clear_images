@@ -1,56 +1,57 @@
-FROM debian:bookworm-slim AS builder-src
-
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-    ca-certificates wget dpkg-dev gcc g++ libc6-dev libssl-dev make; \
-    rm -rf /var/lib/apt/lists/*
-
-ENV REDIS_VERSION=7.2.4
-ENV REDIS_DOWNLOAD_URL=http://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz
-
-RUN set -eux; \
-    wget -O redis.tar.gz "$REDIS_DOWNLOAD_URL"; \
-    mkdir -p /usr/src/redis; \
-    tar -xzf redis.tar.gz -C /usr/src/redis --strip-components=1; \
-    rm redis.tar.gz; \
-    make -C /usr/src/redis -j "$(nproc)" all; \
-    make -C /usr/src/redis install
-
-COPY redis-init.c /usr/src/redis-init.c
-RUN gcc -static -O2 -o /usr/local/bin/redis-init /usr/src/redis-init.c && \
-    chmod +x /usr/local/bin/redis-init
-
-FROM redis:7-bookworm AS builder-official
+# =================================================================
+# Stage 1: The "Builder"
+# Uses the official Debian 12 (bookworm) Redis image as a source.
+# =================================================================
+FROM redis:7-bookworm AS builder
 
 USER root
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk binutils && \
+RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk && \
     mkdir /distroless-deps && \
-    ldd -r /usr/local/bin/redis-server 2>/dev/null | awk 'NF==4{print $3}' | grep -v '^$' | sort -u | \
-    xargs -r cp --parents -t /distroless-deps/ || true && \
+    ldd -r /usr/local/bin/redis-server | awk 'NF == 4 {print $3};' | xargs -I {} cp -v {} /distroless-deps && \
     rm -rf /var/lib/apt/lists/*
 
 USER redis
-
+# =================================================================
+# Stage 2: The Final "Distroless" Image
+# Using Debian 12 base to match the builder stage for library compatibility.
+# =================================================================
 FROM gcr.io/distroless/cc-debian12:nonroot
 
-COPY --from=builder-official /etc/passwd /etc/passwd
-COPY --from=builder-official /etc/group /etc/group
+# Copy user and group files for the 'redis' user
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
 
-COPY --from=builder-official /distroless-deps /
+# Copy all discovered shared libraries from the builder
+COPY --from=builder /distroless-deps/ /lib/x86_64-linux-gnu/
 
-COPY --from=builder-src /usr/local/bin/redis-server /usr/local/bin/redis-server
-COPY --from=builder-src /usr/local/bin/redis-init /usr/local/bin/redis-init
+# Copy the Redis server binary
+COPY --from=builder /usr/local/bin/redis-server /usr/local/bin/redis-server
 
+# Optional: Copy redis-cli for debugging and health checks (currently commented out)
+# COPY --from=builder /usr/local/bin/redis-cli /usr/local/bin/redis-cli
+
+# Copy custom configuration from the build context
 COPY --chown=redis:redis redis.conf /data/redis.conf
 
+# Define a volume for data persistence
 VOLUME /data
+
+# Set the working directory
 WORKDIR /data
+
+# Expose the default Redis port
 EXPOSE 6379
 
-USER root
-ENTRYPOINT ["/usr/local/bin/redis-init"]
+# The HEALTHCHECK is disabled as it requires redis-cli.
+# HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
+#   CMD ["/usr/local/bin/redis-cli", "ping"]
+
+# Switch to the unprivileged 'redis' user
+USER redis
+
+# Set the entrypoint and default command for flexible execution
+ENTRYPOINT ["/usr/local/bin/redis-server"]
 CMD ["/data/redis.conf"]
