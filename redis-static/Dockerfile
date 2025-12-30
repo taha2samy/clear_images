@@ -1,3 +1,6 @@
+# =========================================================================
+# Stage 1: The Builder
+# =========================================================================
 FROM debian:bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,7 +18,7 @@ RUN set -eux; \
     make -C /usr/src/redis install
 
 COPY redis-init.c /tmp/redis-init.c
-RUN gcc -O2 -o /redis-init /tmp/redis-init.c
+RUN gcc -static -O2 -o /redis-init /tmp/redis-init.c
 
 RUN mkdir /gathered-libs
 RUN lddtree -l /usr/local/bin/redis-server | grep '^/' | sort -u | xargs -r cp --parents -t /gathered-libs/
@@ -24,21 +27,20 @@ RUN apt-get purge -y --auto-remove \
     ca-certificates wget dpkg-dev gcc g++ libc6-dev libssl-dev make pax-utils \
     && rm -rf /var/lib/apt/lists/*
 
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 
 COPY --from=builder /redis-init /redis-init
 COPY --from=builder /usr/local/bin/redis-server /usr/local/bin/redis-server
+
 COPY --from=builder /gathered-libs/ /
 
-# Setup config and data directories
 COPY --chown=999:999 redis.conf /data/redis.conf
 VOLUME /data
 WORKDIR /data
 EXPOSE 6379
 
 ENTRYPOINT ["/redis-init"]
-
 CMD ["/data/redis.conf"]

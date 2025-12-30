@@ -1,4 +1,3 @@
-/* redis-init.c (For dynamic environments like distroless/cc) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,7 +8,7 @@
 #define REDIS_GID 999
 
 int main(int argc, char **argv) {
-    // 1. Fix Kernel Settings
+    // 1. Fix Kernel Settings (Must be root here)
     printf("=> [redis-init] Checking vm.overcommit_memory...\n");
     FILE *f = fopen("/proc/sys/vm/overcommit_memory", "w");
     if (f) {
@@ -23,7 +22,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "=> [redis-init] WARNING: Cannot open /proc/sys/vm/overcommit_memory (Permission Denied).\n");
     }
 
-    // 2. Drop Privileges
+    // 2. Drop Privileges (Switch to 'redis' user)
     printf("=> [redis-init] Dropping privileges to user redis (%d:%d)...\n", REDIS_UID, REDIS_GID);
     if (setgid(REDIS_GID) != 0) {
         perror("=> [redis-init] FATAL: Failed to set GID");
@@ -34,14 +33,20 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // 3. Launch Redis Server directly
-    printf("=> [redis-init] Starting redis-server as unprivileged user...\n");
+    // 3. Launch Redis Server (Modified for static environment)
+    printf("=> [redis-init] Starting dynamic redis-server via linker...\n");
     
-    char *redis_bin = "/usr/local/bin/redis-server";
-    argv[0] = "redis-server";
+    char *new_argv[argc + 2];
+    new_argv[0] = "/lib64/ld-linux-x86-64.so.2";
+    new_argv[1] = "/usr/local/bin/redis-server";
+    
+    for (int i = 1; i < argc; i++) {
+        new_argv[i + 1] = argv[i];
+    }
+    new_argv[argc + 1] = NULL;
 
-    execv(redis_bin, argv);
+    execv(new_argv[0], new_argv);
 
-    perror("=> [redis-init] FATAL: Failed to exec redis-server");
+    perror("=> [redis-init] FATAL: Failed to exec linker for redis-server");
     return 1;
 }
