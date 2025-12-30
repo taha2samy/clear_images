@@ -37,13 +37,10 @@ COPY --from=builder /usr/share/nginx/html /usr/share/nginx/html
 
 COPY --from=builder --chown=101:101 /runtime-dirs/var /var
 
-# نسخ ملف config
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# إعداد المستخدم غير-root
 USER 101:101
 
-# إعدادات الحاوية
 EXPOSE 8080
 VOLUME ["/var/cache/nginx", "/var/log/nginx"]
 ENTRYPOINT ["/usr/sbin/nginx"]
