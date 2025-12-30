@@ -71,6 +71,12 @@ jobs:
           push: false
           load: true
           tags: ${{ matrix.service }}:ci
+      - name: Update Summary with Image Size
+        run: |
+          echo "## Image Size Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **${{ matrix.service }}**: ${{ steps.img_size.outputs.IMAGE_SIZE }}" >> $GITHUB_STEP_SUMMARY
+
+
 
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
@@ -193,3 +199,16 @@ jobs:
             reports-*
             gitleaks-report
           failOnError: false
+
+      - name: Create Final Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+              
+              # 🐳 **Docker Images Size Summary**
+              | Service     | Size     |
+              |-------------|----------|
+            EOF
+      - name: Collect Image Sizes
+        run: |
+            SIZES=$(jq -r '.jobs."build-and-scan-services".steps[] | select(.name=="Get Image Size") | .outputs.IMAGE_SIZE // empty' $GITHUB_EVENT_PATH)
+            echo "Collected sizes: $SIZES"
