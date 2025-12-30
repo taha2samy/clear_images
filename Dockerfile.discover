@@ -1,0 +1,6 @@
+FROM cgr.dev/chainguard/wolfi-base
+RUN apk add posix-libc-utils
+COPY discover_deps.sh /discover_deps.sh
+RUN chmod +x /discover_deps.sh
+
+ENTRYPOINT ["/discover_deps.sh"]
