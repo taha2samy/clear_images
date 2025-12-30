@@ -34,8 +34,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ steps.gitleaks.outputs.sarif }}
-# ======================================================================================================================
-# ======================================================================================================================
+
   build-and-scan-services:
     name: Build & Scan - ${{ matrix.service }}
     needs: security-audit
@@ -44,6 +43,10 @@ jobs:
       contents: write     
       security-events: write
       packages: read
+    
+    outputs:
+      image_size: ${{ steps.get_image_size.outputs.size }}
+      service_name: ${{ matrix.service }}
 
     strategy:
       fail-fast: false
@@ -65,18 +68,25 @@ jobs:
           no-fail: true
 
       - name: Build Docker image
+        id: build_image
         uses: docker/build-push-action@v5
         with:
           context: ./${{ matrix.service }}
           push: false
           load: true
           tags: ${{ matrix.service }}:ci
+
+      - name: Get Image Size
+        id: get_image_size
+        run: |
+          IMAGE_SIZE=$(docker images --format "{{.Size}}" ${{ matrix.service }}:ci)
+          echo "Image size for ${{ matrix.service }} is $IMAGE_SIZE"
+          echo "size=$IMAGE_SIZE" >> $GITHUB_OUTPUT
+
       - name: Update Summary with Image Size
         run: |
           echo "## Image Size Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **${{ matrix.service }}**: ${{ steps.img_size.outputs.IMAGE_SIZE }}" >> $GITHUB_STEP_SUMMARY
-
-
+          echo "- **${{ matrix.service }}**: ${{ steps.get_image_size.outputs.size }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Generate SBOM (Syft)
         uses: anchore/sbom-action@v0
@@ -208,7 +218,11 @@ jobs:
               | Service     | Size     |
               |-------------|----------|
             EOF
-      - name: Collect Image Sizes
-        run: |
-            SIZES=$(jq -r '.jobs."build-and-scan-services".steps[] | select(.name=="Get Image Size") | .outputs.IMAGE_SIZE // empty' $GITHUB_EVENT_PATH)
-            echo "Collected sizes: $SIZES"
+          
+          echo "${{ toJSON(needs.build-and-scan-services.outputs) }}" | jq -c '.[]' | while read -r output; do
+            SERVICE_NAME=$(echo "$output" | jq -r '.service_name')
+            IMAGE_SIZE=$(echo "$output" | jq -r '.image_size')
+            if [ -n "$IMAGE_SIZE" ]; then
+              echo "| \`$SERVICE_NAME\` | \`$IMAGE_SIZE\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
