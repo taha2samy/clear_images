@@ -2,14 +2,13 @@ FROM cgr.dev/chainguard/wolfi-base AS builder
 
 RUN apk add --no-cache \
     build-base wget openssl-dev pcre-dev zlib-dev linux-headers \
-    coreutils gd-dev libxml2-dev libxslt-dev binutils scanelf
+    coreutils gd-dev libxml2-dev libxslt-dev binutils scanelf posix-libc-utils bash
 
 RUN wget -qO /usr/bin/lddtree https://raw.githubusercontent.com/ncopa/lddtree/master/lddtree.sh && \
     chmod +x /usr/bin/lddtree
 
-RUN mkdir -p /rootfs/var/log/nginx /rootfs/var/cache/nginx /rootfs/var/run \
-    /rootfs/etc/nginx /rootfs/usr/sbin /rootfs/usr/lib/nginx/modules \
-    /rootfs/usr/lib /rootfs/lib /rootfs/lib64 /rootfs/tmp
+RUN mkdir -p /rootfs/usr/sbin /rootfs/usr/lib/nginx/modules /rootfs/etc/nginx \
+    /rootfs/var/log/nginx /rootfs/var/cache/nginx /rootfs/var/run
 
 RUN echo 'root:x:0:0:root:/root:/sbin/nologin' > /rootfs/etc/passwd && \
     echo 'nginx:x:101:101:nginx:/var/cache/nginx:/sbin/nologin' >> /rootfs/etc/passwd && \
@@ -42,13 +41,14 @@ RUN set -eux; \
         --with-http_gunzip_module --with-http_gzip_static_module --with-http_slice_module \
         --with-http_stub_status_module --with-stream --with-stream_ssl_module \
         --with-stream_realip_module --with-cc-opt="-Wno-error"; \
-    make -j "$(nproc)"; \
+    make -j"$(nproc)"; \
     make install; \
+    strip /usr/sbin/nginx; \
     cp /usr/sbin/nginx /rootfs/usr/sbin/; \
-    strip /rootfs/usr/sbin/nginx; \
     cp -r /etc/nginx/* /rootfs/etc/nginx/; \
     ln -sf /dev/stdout /rootfs/var/log/nginx/access.log; \
-    ln -sf /dev/stderr /rootfs/var/log/nginx/error.log
+    ln -sf /dev/stderr /rootfs/var/log/nginx/error.log; \
+    rm -rf /tmp/* nginx.tar.gz nginx-${NGINX_VERSION}
 
 RUN lddtree /rootfs/usr/sbin/nginx | awk '{print $NF}' | grep -E '\.so' | sort -u | \
     xargs -I {} cp -L {} /rootfs/usr/lib/ 2>/dev/null || true
@@ -65,9 +65,10 @@ COPY --from=builder /rootfs/usr/lib/ /usr/lib/
 COPY --from=builder --chown=101:101 /rootfs/var/log/nginx /var/log/nginx
 COPY --from=builder --chown=101:101 /rootfs/var/cache/nginx /var/cache/nginx
 COPY --from=builder --chown=101:101 /rootfs/var/run /var/run
+COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80 443
 STOPSIGNAL SIGQUIT
-USER nginx
+USER 101
 
 CMD ["nginx", "-g", "daemon off;"]
