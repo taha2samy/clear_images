@@ -1,4 +1,3 @@
-/* redis-init.c (For dynamic environments like distroless/cc) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
