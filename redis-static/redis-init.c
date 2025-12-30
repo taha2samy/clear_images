@@ -8,7 +8,6 @@
 #define REDIS_GID 999
 
 int main(int argc, char **argv) {
-    // 1. Fix Kernel Settings (Must be root here)
     printf("=> [redis-init] Checking vm.overcommit_memory...\n");
     FILE *f = fopen("/proc/sys/vm/overcommit_memory", "w");
     if (f) {
@@ -22,7 +21,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "=> [redis-init] WARNING: Cannot open /proc/sys/vm/overcommit_memory (Permission Denied).\n");
     }
 
-    // 2. Drop Privileges (Switch to 'redis' user)
     printf("=> [redis-init] Dropping privileges to user redis (%d:%d)...\n", REDIS_UID, REDIS_GID);
     if (setgid(REDIS_GID) != 0) {
         perror("=> [redis-init] FATAL: Failed to set GID");
