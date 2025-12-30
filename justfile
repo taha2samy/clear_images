@@ -3,7 +3,7 @@ PROJECT_NAME := "distroless-project"
 REPORTS_DIR  := "./reports"
 
 # Add new services here (space separated)
-SERVICES := "nginx redis"
+SERVICES := "nginx redis super-nginx super-redis"
 
 # Dependency Track
 DTRACK_DIR          := "./dependency-track"

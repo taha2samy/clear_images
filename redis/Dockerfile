@@ -1,68 +1,56 @@
-FROM cgr.dev/chainguard/wolfi-base AS builder
+FROM debian:bookworm-slim AS builder-src
 
-# 1. Install Build Dependencies & Tools
-RUN apk add --no-cache \
-    build-base wget openssl-dev linux-headers binutils scanelf coreutils
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+    ca-certificates wget dpkg-dev gcc g++ libc6-dev libssl-dev make; \
+    rm -rf /var/lib/apt/lists/*
 
-# 2. Install lddtree 
-RUN wget -qO /usr/bin/lddtree https://raw.githubusercontent.com/ncopa/lddtree/master/lddtree.sh && \
-    chmod +x /usr/bin/lddtree
-
-# 3. Build Redis from Source
 ENV REDIS_VERSION=7.2.4
 ENV REDIS_DOWNLOAD_URL=http://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz
 
 RUN set -eux; \
-    wget -qO redis.tar.gz "$REDIS_DOWNLOAD_URL"; \
+    wget -O redis.tar.gz "$REDIS_DOWNLOAD_URL"; \
     mkdir -p /usr/src/redis; \
     tar -xzf redis.tar.gz -C /usr/src/redis --strip-components=1; \
+    rm redis.tar.gz; \
     make -C /usr/src/redis -j "$(nproc)" all; \
-    make -C /usr/src/redis install; \
-    strip /usr/local/bin/redis-server
+    make -C /usr/src/redis install
 
-# 4. Compile the Custom Init Helper (Static Build)
 COPY redis-init.c /usr/src/redis-init.c
 RUN gcc -static -O2 -o /usr/local/bin/redis-init /usr/src/redis-init.c && \
     chmod +x /usr/local/bin/redis-init
 
-RUN mkdir -p /distroless-deps && \
-    lddtree /usr/local/bin/redis-server | awk '{print $NF}' | grep -E '\.so' | sort -u | \
-    xargs -I {} cp -L {} /distroless-deps/ && \
-    # Copy the dynamic linker/loader
-    INTERPRETER=$(readelf -l /usr/local/bin/redis-server | grep "interpreter" | awk -F': ' '{print $2}' | tr -d ']') && \
-    cp -L "$INTERPRETER" /distroless-deps/
+FROM redis:7-bookworm AS builder-official
 
-# 6. Prepare User/Group files (Wolfi format)
-RUN echo 'root:x:0:0:root:/root:/sbin/nologin' > /distroless-deps/passwd && \
-    echo 'redis:x:999:999:redis:/data:/sbin/nologin' >> /distroless-deps/passwd && \
-    echo 'root:x:0:' > /distroless-deps/group && \
-    echo 'redis:x:999:' >> /distroless-deps/group
+USER root
 
-# =================================================================
-# Stage 2: The Final "Distroless" Image
-# =================================================================
-FROM cgr.dev/chainguard/static:latest
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Copy User/Group
-COPY --from=builder /distroless-deps/passwd /etc/passwd
-COPY --from=builder /distroless-deps/group /etc/group
+RUN apt-get update && apt-get install -y --no-install-recommends libc-bin gawk binutils && \
+    mkdir /distroless-deps && \
+    ldd -r /usr/local/bin/redis-server 2>/dev/null | awk 'NF==4{print $3}' | grep -v '^$' | sort -u | \
+    xargs -r cp --parents -t /distroless-deps/ || true && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /distroless-deps/ /usr/lib/
-COPY --from=builder /distroless-deps/ld-linux* /lib/
+USER redis
 
-# Copy Binaries
-COPY --from=builder /usr/local/bin/redis-server /usr/local/bin/redis-server
-COPY --from=builder /usr/local/bin/redis-init /usr/local/bin/redis-init
+FROM gcr.io/distroless/cc-debian12:nonroot
 
-# Copy Config
-COPY --chown=999:999 redis.conf /data/redis.conf
+COPY --from=builder-official /etc/passwd /etc/passwd
+COPY --from=builder-official /etc/group /etc/group
 
-# Setup Environment
+COPY --from=builder-official /distroless-deps /
+
+COPY --from=builder-src /usr/local/bin/redis-server /usr/local/bin/redis-server
+COPY --from=builder-src /usr/local/bin/redis-init /usr/local/bin/redis-init
+
+COPY --chown=redis:redis redis.conf /data/redis.conf
+
 VOLUME /data
 WORKDIR /data
 EXPOSE 6379
 
-# Entrypoint via Custom Init
 USER root
 ENTRYPOINT ["/usr/local/bin/redis-init"]
 CMD ["/data/redis.conf"]

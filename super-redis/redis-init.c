@@ -8,54 +8,31 @@
 #define REDIS_GID 999
 
 int main(int argc, char **argv) {
-    // ---------------------------------------------------------
-    // 1. Fix Kernel Settings (Must be root here)
-    // ---------------------------------------------------------
     printf("=> [redis-init] Checking vm.overcommit_memory...\n");
+    
     FILE *f = fopen("/proc/sys/vm/overcommit_memory", "w");
     if (f) {
-        if (fprintf(f, "1") > 0) {
-            printf("=> [redis-init] SUCCESS: vm.overcommit_memory set to 1.\n");
-        } else {
-            fprintf(stderr, "=> [redis-init] WARNING: Failed to write to /proc/sys/vm/overcommit_memory.\n");
-        }
+        fprintf(f, "1");
         fclose(f);
-    } else {
-        fprintf(stderr, "=> [redis-init] WARNING: Cannot open /proc/sys/vm/overcommit_memory (Permission Denied).\n");
+        printf("=> [redis-init] vm.overcommit_memory set to 1\n");
     }
 
-    // ---------------------------------------------------------
-    // 2. Drop Privileges (Switch to 'redis' user)
-    // ---------------------------------------------------------
-    printf("=> [redis-init] Dropping privileges to user redis (%d:%d)...\n", REDIS_UID, REDIS_GID);
-
-    // Set Group ID first
+    printf("=> [redis-init] Dropping privileges to redis (%d:%d)...\n", REDIS_UID, REDIS_GID);
+    
     if (setgid(REDIS_GID) != 0) {
-        perror("=> [redis-init] FATAL: Failed to set GID");
+        perror("=> [redis-init] Failed setgid");
         return 1;
     }
-
-    // Set User ID second (dropping root permanently)
     if (setuid(REDIS_UID) != 0) {
-        perror("=> [redis-init] FATAL: Failed to set UID");
+        perror("=> [redis-init] Failed setuid");
         return 1;
     }
 
-    // ---------------------------------------------------------
-    // 3. Launch Redis Server
-    // ---------------------------------------------------------
-    printf("=> [redis-init] Starting redis-server as unprivileged user...\n");
+    printf("=> [redis-init] Starting redis-server...\n");
     
     char *redis_bin = "/usr/local/bin/redis-server";
-    
-    // We update argv[0] to make the process look nice in ps/top
-    argv[0] = "redis-server";
-
-    // Replace the current process image with redis-server
-    // This preserves the PID 1 behavior if we are PID 1
     execv(redis_bin, argv);
-
-    // If we get here, execv failed
-    perror("=> [redis-init] FATAL: Failed to exec redis-server");
+    
+    perror("=> [redis-init] Failed exec redis-server");
     return 1;
 }
