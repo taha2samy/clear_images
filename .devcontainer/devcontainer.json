@@ -22,6 +22,6 @@
             ]
         }
     },
-    "postCreateCommand": "echo 'Welcome! All tools are installed from the custom Dockerfile.'",
+    "postCreateCommand": "echo '....'",
     "remoteUser": "root"
 }
