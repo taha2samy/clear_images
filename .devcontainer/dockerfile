@@ -36,8 +36,3 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 ENV DOCKER_API_VERSION=1.43
 
-# You can add other configurations here, like creating a non-root user
-# For example:
-# RUN useradd -m vscode && echo "vscode ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vscode
-# USER vscode
-# WORKDIR /home/vscode 
